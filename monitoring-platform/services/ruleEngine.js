@@ -248,7 +248,7 @@ async function analyzeLog(logData, io) {
         attackType: 'SQLInjection',
         sourceIP: ip,
         description: `SQL Injection attempt detected from ${ip} on ${endpoint}`,
-        details: { endpoint, payloadSnippet: sqlTarget.substring(0, 500) },
+        details: { endpoint, payloadSnippet: sqlTarget.substring(0, 500), username: payload.username },
       },
       io,
     );
@@ -259,11 +259,11 @@ async function analyzeLog(logData, io) {
   if (XSS_RE.test(payloadString)) {
     return createAlert(
       {
-        severity: 'High',
+        severity: 'Critical',
         attackType: 'XSS',
         sourceIP: ip,
         description: `XSS attempt detected from ${ip} on ${endpoint}`,
-        details: { endpoint, payloadSnippet: payloadString.substring(0, 500) },
+        details: { endpoint, payloadSnippet: payloadString.substring(0, 500), username: payload.username },
       },
       io,
     );
@@ -273,11 +273,11 @@ async function analyzeLog(logData, io) {
   if (DIR_TRAVERSAL_RE.test(endpoint)) {
     return createAlert(
       {
-        severity: 'High',
+        severity: 'Critical',
         attackType: 'DirectoryTraversal',
         sourceIP: ip,
         description: `Directory traversal attempt from ${ip}: ${endpoint}`,
-        details: { endpoint },
+        details: { endpoint, username: payload.username },
       },
       io,
     );
@@ -291,12 +291,13 @@ async function analyzeLog(logData, io) {
     if (notFoundCounts.get(ip).size > 10) {
       return createAlert(
         {
-          severity: 'Medium',
+          severity: 'Critical',
           attackType: 'Enumeration',
           sourceIP: ip,
           description: `Enumeration detected from ${ip}: ${notFoundCounts.get(ip).size} unique 404s`,
           details: {
             uniqueEndpoints: [...notFoundCounts.get(ip)].slice(0, 20),
+            username: payload.username,
           },
         },
         io,
@@ -315,11 +316,11 @@ async function analyzeLog(logData, io) {
   if (recentReqs.length > 100) {
     return createAlert(
       {
-        severity: 'High',
+        severity: 'Critical',
         attackType: 'HTTPFlood',
         sourceIP: ip,
         description: `HTTP flood from ${ip}: ${recentReqs.length} requests in 60 s`,
-        details: { requestCount: recentReqs.length, window: '60s' },
+        details: { requestCount: recentReqs.length, window: '60s', username: payload.username },
       },
       io,
     );
@@ -334,7 +335,7 @@ async function analyzeLog(logData, io) {
         attackType: 'PortScan',
         sourceIP: ip,
         description: `Vulnerability scanner / port scan simulation detected from ${ip} (UA: ${ua})`,
-        details: { userAgent: ua },
+        details: { userAgent: ua, username: payload.username },
       },
       io,
     );

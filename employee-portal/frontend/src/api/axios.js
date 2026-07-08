@@ -35,4 +35,21 @@ api.interceptors.request.use(
   }
 );
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 403 && error.response.data?.isIpBlocked) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user_profile');
+      localStorage.setItem('login_error', error.response.data.message || 'Access denied due to a security violation.');
+      
+      // Redirect to login page
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

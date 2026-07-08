@@ -24,6 +24,11 @@ const requestLogger = (req, res, next) => {
       eventType = 'Error';
     }
 
+    const logPayload = req.body && Object.keys(req.body).length > 0 ? { ...req.body } : {};
+    if (req.user && req.user.username) {
+      logPayload.username = req.user.username;
+    }
+
     // Fire-and-forget — don't await
     sendLog({
       ip: req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress,
@@ -32,7 +37,7 @@ const requestLogger = (req, res, next) => {
       status: res.statusCode,
       userAgent: req.headers['user-agent'] || 'unknown',
       eventType,
-      payload: req.body && Object.keys(req.body).length > 0 ? req.body : undefined,
+      payload: Object.keys(logPayload).length > 0 ? logPayload : undefined,
     });
 
     return originalMethod(body);

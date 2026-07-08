@@ -75,4 +75,18 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/*  GET /blocked-ips/check/:ip — Public check if an IP is blocked      */
+/* ------------------------------------------------------------------ */
+router.get('/check/:ip', async (req, res) => {
+  try {
+    const { ip } = req.params;
+    const block = await BlockedIp.findOne({ ip, isActive: true }).lean();
+    return res.json({ blocked: !!block, block });
+  } catch (err) {
+    console.error('[BlockedIPs] Public check error:', err.message);
+    return res.status(500).json({ error: 'Check failed' });
+  }
+});
+
 module.exports = router;

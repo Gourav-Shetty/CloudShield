@@ -116,19 +116,18 @@ async function handleIncident(alertData, io) {
   });
   await report.save();
 
-  /* --- 3. Lock Targeted Account (if Brute Force) --- */
-  if (alertData.attackType === 'BruteForce') {
-    try {
-      await lockUserAccount(ip);
-      incident.actionsTaken.push({
-        action: 'Account Locked',
-        timestamp: new Date(),
-        details: `Locked user account associated with IP ${ip}`,
-      });
-      report.actionsPerformed.push('Account Locked');
-    } catch (lockErr) {
-      console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
-    }
+  /* --- 3. Lock Targeted Account (for any attack type) --- */
+  try {
+    const targetUsername = alertData.details?.username || '';
+    await lockUserAccount(ip, targetUsername);
+    incident.actionsTaken.push({
+      action: 'Account Locked',
+      timestamp: new Date(),
+      details: `Locked user account associated with IP ${ip}${targetUsername ? ' / Username ' + targetUsername : ''}`,
+    });
+    report.actionsPerformed.push('Account Locked');
+  } catch (lockErr) {
+    console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
   }
 
   /* --- 4. Check if IP is already blocked --- */

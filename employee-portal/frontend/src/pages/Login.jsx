@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiLock, FiUser, FiAlertCircle, FiShield } from 'react-icons/fi';
@@ -14,6 +14,14 @@ const Login = () => {
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
+
+  useEffect(() => {
+    const storedError = localStorage.getItem('login_error');
+    if (storedError) {
+      setError(storedError);
+      localStorage.removeItem('login_error');
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
