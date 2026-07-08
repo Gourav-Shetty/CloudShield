@@ -1,0 +1,27 @@
+# =============================================================================
+# CloudShield AI — Systemd Service Unit (AI Microservice)
+# =============================================================================
+# Install:
+#   sudo cp cloudshield-ai.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable cloudshield-ai
+#   sudo systemctl start  cloudshield-ai
+#
+# Logs:
+#   sudo journalctl -u cloudshield-ai -f
+# =============================================================================
+
+[Unit]
+Description=CloudShield AI Microservice
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/CloudShield-AI/ai-service
+ExecStart=/home/ubuntu/CloudShield-AI/ai-service/venv/bin/python app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment
+.env
+*.pem
+keys/
+
+# Build output
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Python
+*.egg-info/
+*.egg
+.eggs/
+
+# Model files
+*.pkl
+*.joblib
+
+# Uploads
+uploads/*
+!uploads/.gitkeep

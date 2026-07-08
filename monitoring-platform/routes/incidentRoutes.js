@@ -1,0 +1,141 @@
+const express = require('express');
+const Incident = require('../models/Incident');
+const { lockUserAccount } = require('../services/incidentResponse');
+const auth = require('../middleware/auth');
+
+const router = express.Router();
+
+/* ------------------------------------------------------------------ */
+/*  GET /incidents — List all incidents                                */
+/* ------------------------------------------------------------------ */
+
+router.get('/', auth, async (req, res) => {
+  try {
+    const incidents = await Incident.find()
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({ incidents });
+  } catch (err) {
+    console.error('[Incidents] GET error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch incidents' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  GET /incidents/:id — Single incident with populated alerts        */
+/* ------------------------------------------------------------------ */
+
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const incident = await Incident.findOne({
+      $or: [
+        { _id: req.params.id.match(/^[0-9a-fA-F]{24}$/) ? req.params.id : undefined },
+        { incidentId: req.params.id },
+      ].filter(Boolean),
+    }).populate('relatedAlerts');
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    return res.json({ incident });
+  } catch (err) {
+    console.error('[Incidents] GET/:id error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch incident' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  PUT /incidents/:id/resolve — Resolve an incident                  */
+/* ------------------------------------------------------------------ */
+
+router.put('/:id/resolve', auth, async (req, res) => {
+  try {
+    const incident = await Incident.findOne({
+      $or: [
+        { _id: req.params.id.match(/^[0-9a-fA-F]{24}$/) ? req.params.id : undefined },
+        { incidentId: req.params.id },
+      ].filter(Boolean),
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    incident.status = 'Resolved';
+    incident.resolvedAt = new Date();
+    incident.actionsTaken.push({
+      action: 'Incident resolved',
+      timestamp: new Date(),
+      details: req.body.details || 'Manually resolved by admin',
+    });
+
+    await incident.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('incident-resolved', incident);
+    }
+
+    return res.json({ message: 'Incident resolved', incident });
+  } catch (err) {
+    console.error('[Incidents] Resolve error:', err.message);
+    return res.status(500).json({ error: 'Failed to resolve incident' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  POST /unlock-account — Unlock a user account by IP                */
+/* ------------------------------------------------------------------ */
+
+router.post('/unlock-account', auth, async (req, res) => {
+  try {
+    const { ip } = req.body;
+
+    if (!ip) {
+      return res.status(400).json({ error: 'IP address is required' });
+    }
+
+    const result = await lockUserAccount(ip);
+
+    // Note: lockUserAccount sets isLocked = true. For an "unlock" endpoint
+    // we need the inverse. Re-connect and set isLocked = false.
+    const mongoose = require('mongoose');
+    const portalUri = process.env.PORTAL_DB_URI;
+    if (!portalUri) {
+      return res.status(500).json({ error: 'PORTAL_DB_URI not configured' });
+    }
+
+    let portalConn;
+    try {
+      portalConn = await mongoose.createConnection(portalUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      }).asPromise();
+
+      const UserModel = portalConn.model(
+        'UserUnlock',
+        new mongoose.Schema({ isLocked: Boolean, lastLoginIP: String }),
+        'users',
+      );
+
+      const unlockResult = await UserModel.updateMany(
+        { lastLoginIP: ip },
+        { $set: { isLocked: false } },
+      );
+
+      return res.json({
+        message: `Unlocked ${unlockResult.modifiedCount} account(s) for IP ${ip}`,
+        modifiedCount: unlockResult.modifiedCount,
+      });
+    } finally {
+      if (portalConn) await portalConn.close();
+    }
+  } catch (err) {
+    console.error('[Incidents] Unlock error:', err.message);
+    return res.status(500).json({ error: 'Failed to unlock account' });
+  }
+});
+
+module.exports = router;

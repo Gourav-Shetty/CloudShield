@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-900 text-gray-100 font-sans antialiased;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #111827; }
+  ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-dark-700/50 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-lg;
+  }
+  .stat-card {
+    @apply glass-card p-6 hover:border-cyber-blue/30 transition-all duration-300 hover:shadow-cyan-500/5;
+  }
+  .severity-critical { @apply bg-cyber-red/20 text-cyber-red border border-cyber-red/30; }
+  .severity-high { @apply bg-orange-500/20 text-orange-400 border border-orange-500/30; }
+  .severity-medium { @apply bg-cyber-yellow/20 text-cyber-yellow border border-cyber-yellow/30; }
+  .severity-low { @apply bg-cyber-green/20 text-cyber-green border border-cyber-green/30; }
+}
+
+/* Custom cyber glow helper classes */
+.cyber-glow-blue {
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.25);
+  border-color: rgba(0, 212, 255, 0.4);
+}
+.cyber-glow-red {
+  box-shadow: 0 0 15px rgba(255, 51, 102, 0.25);
+  border-color: rgba(255, 51, 102, 0.4);
+}
+.cyber-glow-green {
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.25);
+  border-color: rgba(0, 255, 136, 0.4);
+}
+.cyber-glow-yellow {
+  box-shadow: 0 0 15px rgba(255, 170, 0, 0.25);
+  border-color: rgba(255, 170, 0, 0.4);
+}
