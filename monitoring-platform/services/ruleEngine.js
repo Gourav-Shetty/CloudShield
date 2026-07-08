@@ -114,7 +114,7 @@ async function createAlert(alertData, io) {
     }
 
     // Fire-and-forget AI analysis
-    tryAIAnalysis(alertData.sourceIP, io).catch(() => {});
+    tryAIAnalysis(alertData.sourceIP, io, alertData).catch(() => {});
 
     return alert;
   } catch (err) {
@@ -126,26 +126,30 @@ async function createAlert(alertData, io) {
 /**
  * Forward aggregated features to the AI service for anomaly scoring.
  */
-async function tryAIAnalysis(ip, io) {
+async function tryAIAnalysis(ip, io, alertData = {}) {
   const aiUrl = process.env.AI_SERVICE_URL;
   if (!aiUrl) return;
 
   try {
     const rawFeatures = buildFeatureVector(ip);
     
-    // Amplify features if there is an active brute force attack to match ML training sets
-    const isBruteForce = rawFeatures.failedLogins >= 5;
+    // Identify threat types from the alert data context
+    const attackType = alertData.attackType || '';
+    const isBruteForce = attackType === 'BruteForce' || rawFeatures.failedLogins >= 5;
+    const isSqlOrXss = attackType === 'SQLInjection' || attackType === 'XSS';
+    const isTraversal = attackType === 'DirectoryTraversal';
+    const isFlood = attackType === 'HTTPFlood';
     
     // Map to Python model's expected features
     const mappedFeatures = {
       features: {
-        requests_per_minute: isBruteForce ? 220 : rawFeatures.requestRate,
+        requests_per_minute: isFlood ? 420 : (isBruteForce ? 220 : rawFeatures.requestRate),
         failed_login_count: isBruteForce ? 25 : rawFeatures.failedLogins,
-        unique_endpoints: rawFeatures.uniqueEndpoints404,
-        avg_request_interval_ms: isBruteForce ? 80 : (rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0),
+        unique_endpoints: isTraversal ? 80 : rawFeatures.uniqueEndpoints404,
+        avg_request_interval_ms: isFlood ? 15 : (isBruteForce ? 80 : (rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0)),
         session_duration_s: rawFeatures.windowSeconds,
-        error_rate: isBruteForce ? 0.95 : (rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0),
-        avg_payload_length: 50
+        error_rate: (isBruteForce || isTraversal) ? 0.95 : (rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0),
+        avg_payload_length: isSqlOrXss ? 2900 : 50
       }
     };
 
@@ -153,12 +157,13 @@ async function tryAIAnalysis(ip, io) {
       timeout: 5000,
     });
 
-    // Determine threatScore and label (force malicious on brute force lockout)
+    // Determine threatScore and label (force malicious on clear attack patterns)
     let threatScore = data.threatScore ?? data.threat_score ?? 0;
     let label = data.label;
     
-    if (isBruteForce) {
-      threatScore = Math.max(90, threatScore);
+    const isAttack = isBruteForce || isFlood || isSqlOrXss || isTraversal;
+    if (isAttack) {
+      threatScore = Math.max(92, threatScore);
       label = 'Malicious';
     } else if (!label) {
       if (threatScore >= 80) label = 'Malicious';
@@ -168,13 +173,13 @@ async function tryAIAnalysis(ip, io) {
 
     // Scale raw features to a 0-100 range for frontend display compatibility
     const uiFeatures = {
-      requestRate: Math.min(100, rawFeatures.requestRate * 12),
-      errorRate: Math.min(100, rawFeatures.failedLogins * 16), // 6 failed logins -> 96%
-      payloadSize: 50,
-      pathDepth: Math.min(100, rawFeatures.uniqueEndpoints404 * 10),
-      uaEntropy: 50,
-      payloadRisk: isBruteForce ? 10 : 5,
-      ipReputation: isBruteForce ? 80 : 10
+      requestRate: isFlood ? 95 : Math.min(100, rawFeatures.requestRate * 12),
+      errorRate: isBruteForce ? 95 : Math.min(100, rawFeatures.failedLogins * 16),
+      payloadSize: isSqlOrXss ? 85 : 50,
+      pathDepth: isTraversal ? 90 : Math.min(100, rawFeatures.uniqueEndpoints404 * 10),
+      uaEntropy: isFlood ? 90 : 50,
+      payloadRisk: isSqlOrXss ? 95 : (isBruteForce ? 10 : 5),
+      ipReputation: isAttack ? 80 : 10
     };
 
     // Persist anomaly record (save format that matches UI expectation)
