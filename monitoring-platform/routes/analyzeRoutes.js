@@ -76,10 +76,7 @@ router.post('/', auth, async (req, res) => {
       else label = 'Normal';
     }
 
-    // Make prediction text human readable if needed
-    let predictionText = 'Normal Request Baseline';
-    if (label === 'Anomalous') predictionText = 'Critical Protocol Anomaly';
-    else if (label === 'Suspicious') predictionText = 'Suspicious Scanning Pattern';
+    const featureObj = featureVector.features || featureVector;
 
     // Persist anomaly record (save the original UI feature vector so the frontend radar chart works)
     const anomaly = await Anomaly.create({
@@ -87,7 +84,7 @@ router.post('/', auth, async (req, res) => {
       prediction: aiResult.prediction === -1 ? -1 : 1,
       threatScore: aiResult.threatScore ?? aiResult.threat_score ?? 0,
       label: label,
-      featureVector: featureVector.features || featureVector,
+      featureVector: featureObj,
       ip: featureVector.ip || 'unknown',
     });
 
@@ -101,8 +98,8 @@ router.post('/', auth, async (req, res) => {
       message: 'Analysis complete',
       id: anomaly._id,
       threatScore: anomaly.threatScore,
-      label: anomaly.label,
-      prediction: predictionText,
+      label: anomaly.label === 'Malicious' || anomaly.label === 'Anomalous' ? 'Anomalous' : 'Normal',
+      prediction: getDescriptivePrediction(anomaly.threatScore, featureObj),
       timestamp: anomaly.timestamp,
       features: anomaly.featureVector,
       ip: anomaly.ip
@@ -112,6 +109,25 @@ router.post('/', auth, async (req, res) => {
     return res.status(500).json({ error: 'Analysis failed' });
   }
 });
+
+/**
+ * Determine a realistic and dynamic prediction label based on feature vector metrics
+ */
+function getDescriptivePrediction(threatScore, f = {}) {
+  if (threatScore >= 80) {
+    if ((f.payloadRisk || 0) > 60) return 'SQLi/XSS Injection Vector';
+    if ((f.requestRate || 0) > 70) return 'DDoS Flood Activity';
+    if ((f.errorRate || 0) > 70) return 'Brute Force Lockout Attack';
+    if ((f.uaEntropy || 0) > 70 && (f.ipReputation || 0) > 60) return 'Malicious Bot Spidering';
+    return 'Critical Protocol Anomaly';
+  } else if (threatScore >= 50) {
+    if ((f.pathDepth || 0) > 60) return 'Directory Traversal Scanning';
+    return 'Suspicious Scanning Pattern';
+  } else if (threatScore >= 25) {
+    return 'Suspicious Network Probe';
+  }
+  return 'Normal Request Baseline';
+}
 
 /* ------------------------------------------------------------------ */
 /*  GET /detections — List AI anomaly logs                            */
@@ -129,8 +145,8 @@ router.get('/detections', auth, async (req, res) => {
       id: a._id,
       ip: a.ip,
       threatScore: a.threatScore,
-      label: a.label,
-      prediction: a.prediction === -1 ? 'Critical Protocol Anomaly' : 'Normal Request Baseline',
+      label: a.label === 'Malicious' || a.label === 'Anomalous' ? 'Anomalous' : 'Normal',
+      prediction: getDescriptivePrediction(a.threatScore, a.featureVector),
       timestamp: a.timestamp,
       features: a.featureVector
     }));
