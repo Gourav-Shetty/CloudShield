@@ -65,17 +65,31 @@ app.use('/alerts', alertRoutes);
 app.use('/reports', reportRoutes);
 app.use('/analyze', analyzeRoutes);
 
-// Mount incident routes.
-// Mounting at '/' matches '/incidents', '/incidents/:id', '/incidents/:id/resolve', and '/unlock-account'
-app.use('/', incidentRoutes);
+// Mount incident routes at /incidents
+app.use('/incidents', incidentRoutes);
 
-// Mount block routes.
-// '/blocked-ips' handles GET /blocked-ips, DELETE /blocked-ips/:id
+// Mount block routes — backend serves these paths
 app.use('/blocked-ips', blockRoutes);
-// Alias '/block-ip' to blockRoutes so POST /block-ip works
 app.use('/block-ip', (req, res, next) => {
   req.url = '/';
   blockRoutes(req, res, next);
+});
+
+// Dashboard frontend calls /ip/blocks, /ip/block, /ip/unblock — alias them
+app.get('/ip/blocks', (req, res, next) => { req.url = '/'; blockRoutes(req, res, next); });
+app.post('/ip/block', (req, res, next) => { req.url = '/'; blockRoutes(req, res, next); });
+app.post('/ip/unblock', async (req, res) => {
+  try {
+    const { ip } = req.body;
+    if (!ip) return res.status(400).json({ error: 'IP required' });
+    const ioInstance = req.app.get('io');
+    const { manualUnblock } = require('./services/incidentResponse');
+    const result = await manualUnblock(ip, ioInstance);
+    return res.json(result);
+  } catch (err) {
+    console.error('[IP Unblock] Error:', err.message);
+    return res.status(500).json({ error: 'Unblock failed' });
+  }
 });
 
 // Global error handler

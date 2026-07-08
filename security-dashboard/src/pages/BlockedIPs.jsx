@@ -73,11 +73,15 @@ const BlockedIPs = () => {
     const fetchBlockedIPs = async () => {
       try {
         const response = await api.get('/ip/blocks');
-        if (response.data && Array.isArray(response.data)) {
-          setBlockedList(response.data.map(b => ({
+        const raw = response.data?.blockedIps || response.data;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          setBlockedList(raw.map(b => ({
             ...b,
+            id: b._id || b.id,
             blockedAt: new Date(b.blockedAt),
-            unblockAt: new Date(b.unblockAt)
+            unblockAt: new Date(b.unblockAt),
+            reason: b.reason || b.attackType || 'Unknown',
+            status: b.isActive ? 'active' : 'expired'
           })));
         } else {
           setBlockedList(generateMockBlocks());
