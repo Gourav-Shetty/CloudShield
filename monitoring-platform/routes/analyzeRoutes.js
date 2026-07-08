@@ -114,14 +114,16 @@ router.post('/', auth, async (req, res) => {
  * Determine a realistic and dynamic prediction label based on feature vector metrics
  */
 function getDescriptivePrediction(threatScore, f = {}) {
+  // If specific signatures are highly elevated, match them first
+  if ((f.errorRate || 0) > 70) return 'Brute Force Lockout Attack';
+  if ((f.payloadRisk || 0) > 60) return 'SQLi/XSS Injection Vector';
+  if ((f.requestRate || 0) > 70) return 'DDoS Flood Activity';
+  if ((f.pathDepth || 0) > 60) return 'Directory Traversal Scanning';
+  if ((f.uaEntropy || 0) > 70 && (f.ipReputation || 0) > 60) return 'Malicious Bot Spidering';
+
   if (threatScore >= 80) {
-    if ((f.payloadRisk || 0) > 60) return 'SQLi/XSS Injection Vector';
-    if ((f.requestRate || 0) > 70) return 'DDoS Flood Activity';
-    if ((f.errorRate || 0) > 70) return 'Brute Force Lockout Attack';
-    if ((f.uaEntropy || 0) > 70 && (f.ipReputation || 0) > 60) return 'Malicious Bot Spidering';
     return 'Critical Protocol Anomaly';
   } else if (threatScore >= 50) {
-    if ((f.pathDepth || 0) > 60) return 'Directory Traversal Scanning';
     return 'Suspicious Scanning Pattern';
   } else if (threatScore >= 25) {
     return 'Suspicious Network Probe';

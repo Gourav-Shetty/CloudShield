@@ -139,12 +139,12 @@ async function tryAIAnalysis(ip, io) {
     // Map to Python model's expected features
     const mappedFeatures = {
       features: {
-        requests_per_minute: isBruteForce ? 120 : rawFeatures.requestRate,
-        failed_login_count: rawFeatures.failedLogins,
+        requests_per_minute: isBruteForce ? 220 : rawFeatures.requestRate,
+        failed_login_count: isBruteForce ? 25 : rawFeatures.failedLogins,
         unique_endpoints: rawFeatures.uniqueEndpoints404,
-        avg_request_interval_ms: isBruteForce ? 150 : (rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0),
+        avg_request_interval_ms: isBruteForce ? 80 : (rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0),
         session_duration_s: rawFeatures.windowSeconds,
-        error_rate: isBruteForce ? 0.9 : (rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0),
+        error_rate: isBruteForce ? 0.95 : (rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0),
         avg_payload_length: 50
       }
     };
@@ -153,10 +153,14 @@ async function tryAIAnalysis(ip, io) {
       timeout: 5000,
     });
 
-    // Determine a label based on the prediction/threatScore
+    // Determine threatScore and label (force malicious on brute force lockout)
+    let threatScore = data.threatScore ?? data.threat_score ?? 0;
     let label = data.label;
-    if (!label) {
-      const threatScore = data.threatScore ?? data.threat_score ?? 0;
+    
+    if (isBruteForce) {
+      threatScore = Math.max(90, threatScore);
+      label = 'Malicious';
+    } else if (!label) {
       if (threatScore >= 80) label = 'Malicious';
       else if (threatScore >= 50) label = 'Suspicious';
       else label = 'Safe';
@@ -177,7 +181,7 @@ async function tryAIAnalysis(ip, io) {
     const anomaly = await Anomaly.create({
       score: data.score ?? data.anomaly_score ?? 0,
       prediction: data.prediction === -1 ? -1 : 1,
-      threatScore: data.threatScore ?? data.threat_score ?? 0,
+      threatScore: threatScore,
       label: label,
       featureVector: uiFeatures,
       ip,
