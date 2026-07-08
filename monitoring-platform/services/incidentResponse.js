@@ -128,6 +128,21 @@ async function handleIncident(alertData, io) {
     return incident;
   }
 
+  /* --- 3.5 Lock Targeted Account (if Brute Force) --- */
+  if (alertData.attackType === 'BruteForce') {
+    try {
+      await lockUserAccount(ip);
+      incident.actionsTaken.push({
+        action: 'Account Locked',
+        timestamp: new Date(),
+        details: `Locked user account associated with IP ${ip}`,
+      });
+      report.actionsPerformed.push('Account Locked');
+    } catch (lockErr) {
+      console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
+    }
+  }
+
   /* --- 4. SSH block --- */
   let sshSuccess = false;
   try {

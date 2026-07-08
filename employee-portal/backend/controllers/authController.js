@@ -146,6 +146,10 @@ const login = async (req, res) => {
       });
     }
 
+    // Save login IP to user record
+    user.lastLoginIP = req.headers['x-forwarded-for'] || req.ip || '';
+    await user.save();
+
     // Generate JWT
     const token = jwt.sign(
       { id: user._id, username: user.username, role: user.role },
