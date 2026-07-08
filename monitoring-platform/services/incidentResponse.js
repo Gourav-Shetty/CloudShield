@@ -341,6 +341,22 @@ async function lockUserAccount(ip) {
     return { success: false, message: 'PORTAL_DB_URI not configured' };
   }
 
+  // Look up recent failed login logs from this IP to find targeted usernames
+  const Log = require('../models/Log');
+  let usernames = [];
+  try {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000); // last 5 minutes
+    const recentLogs = await Log.find({
+      ip,
+      eventType: 'Login',
+      status: 401,
+      timestamp: { $gte: cutoff }
+    }).lean();
+    usernames = [...new Set(recentLogs.map(l => l.payload?.username).filter(Boolean))];
+  } catch (logErr) {
+    console.warn('[IncidentResponse] Failed to query recent failed login logs:', logErr.message);
+  }
+
   let portalConn;
   try {
     portalConn = await mongoose.createConnection(portalUri, {
@@ -348,22 +364,32 @@ async function lockUserAccount(ip) {
       useUnifiedTopology: true,
     }).asPromise();
 
-    // Assume the portal stores users in a "users" collection
     const UserModel = portalConn.model(
       'User',
       new mongoose.Schema({
         isLocked: Boolean,
         lastLoginIP: String,
+        username: String,
       }),
       'users',
     );
 
+    // Build the query to lock both by IP and by specific targeted usernames
+    const query = {
+      $or: [
+        { lastLoginIP: ip },
+      ]
+    };
+    if (usernames.length > 0) {
+      query.$or.push({ username: { $in: usernames } });
+    }
+
     const result = await UserModel.updateMany(
-      { lastLoginIP: ip },
+      query,
       { $set: { isLocked: true } },
     );
 
-    console.log(`[IncidentResponse] Locked ${result.modifiedCount} account(s) for IP ${ip}`);
+    console.log(`[IncidentResponse] Locked ${result.modifiedCount} account(s) for IP ${ip} (targeted: ${usernames.join(', ')})`);
     return { success: true, modifiedCount: result.modifiedCount };
   } catch (err) {
     console.error('[IncidentResponse] Failed to lock accounts:', err.message);
