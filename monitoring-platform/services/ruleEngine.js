@@ -131,18 +131,49 @@ async function tryAIAnalysis(ip, io) {
   if (!aiUrl) return;
 
   try {
-    const features = buildFeatureVector(ip);
-    const { data } = await axios.post(`${aiUrl}/analyze`, features, {
+    const rawFeatures = buildFeatureVector(ip);
+    
+    // Map to Python model's expected features
+    const mappedFeatures = {
+      features: {
+        requests_per_minute: rawFeatures.requestRate,
+        failed_login_count: rawFeatures.failedLogins,
+        unique_endpoints: rawFeatures.uniqueEndpoints404,
+        avg_request_interval_ms: rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0,
+        session_duration_s: rawFeatures.windowSeconds,
+        error_rate: rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0,
+        avg_payload_length: 50
+      }
+    };
+
+    const { data } = await axios.post(`${aiUrl}/analyze`, mappedFeatures, {
       timeout: 5000,
     });
 
-    // Persist anomaly record
+    // Determine a label based on the prediction/threatScore
+    let label = data.label;
+    if (!label) {
+      const threatScore = data.threatScore ?? data.threat_score ?? 0;
+      if (threatScore >= 80) label = 'Malicious';
+      else if (threatScore >= 50) label = 'Suspicious';
+      else label = 'Safe';
+    }
+
+    // Persist anomaly record (save format that matches UI expectation)
     const anomaly = await Anomaly.create({
       score: data.score ?? data.anomaly_score ?? 0,
       prediction: data.prediction === -1 ? -1 : 1,
       threatScore: data.threatScore ?? data.threat_score ?? 0,
-      label: data.label || 'Safe',
-      featureVector: features,
+      label: label,
+      featureVector: {
+        requestRate: rawFeatures.requestRate,
+        errorRate: rawFeatures.failedLogins,
+        payloadSize: 50,
+        pathDepth: rawFeatures.uniqueEndpoints404,
+        uaEntropy: 50,
+        payloadRisk: 10,
+        ipReputation: 10
+      },
       ip,
     });
 
@@ -151,7 +182,7 @@ async function tryAIAnalysis(ip, io) {
     }
   } catch (err) {
     // AI service may be offline — non-fatal
-    console.warn('[RuleEngine] AI analysis unavailable:', err.message);
+    console.warn('[RuleEngine] AI analysis unavailable:', err.response?.data || err.message);
   }
 }
 
