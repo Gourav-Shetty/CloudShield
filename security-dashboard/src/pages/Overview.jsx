@@ -94,15 +94,45 @@ const Overview = () => {
   useEffect(() => {
     const fetchDashboardStats = async () => {
       try {
-        const response = await api.get('/stats');
+        const response = await api.get('/dashboard');
         if (response.data) {
           setStats(prev => ({
             totalLogs: response.data.totalLogs || prev.totalLogs,
             activeAlerts: response.data.activeAlerts !== undefined ? response.data.activeAlerts : prev.activeAlerts,
             openIncidents: response.data.openIncidents !== undefined ? response.data.openIncidents : prev.openIncidents,
-            blockedIps: response.data.blockedIps !== undefined ? response.data.blockedIps : prev.blockedIps,
+            blockedIps: response.data.blockedIPs !== undefined ? response.data.blockedIPs : prev.blockedIps,
             threatScore: response.data.threatScore !== undefined ? response.data.threatScore : prev.threatScore
           }));
+
+          if (response.data.recentAlerts && Array.isArray(response.data.recentAlerts) && response.data.recentAlerts.length > 0) {
+            setRecentAlerts(response.data.recentAlerts.slice(0, 5).map(a => ({
+              id: a._id || a.id,
+              timestamp: new Date(a.createdAt || a.timestamp),
+              severity: (a.severity || 'medium').toLowerCase(),
+              attackType: a.attackType,
+              sourceIp: a.sourceIP || a.sourceIp || 'unknown',
+              description: a.description || ''
+            })));
+          }
+
+          if (response.data.threatDistribution && Array.isArray(response.data.threatDistribution) && response.data.threatDistribution.length > 0) {
+            const totalAlerts = response.data.threatDistribution.reduce((acc, d) => acc + d.count, 0) || 1;
+            const mappedBreakdown = response.data.threatDistribution.map(d => {
+              let displayName = d._id;
+              if (d._id === 'SQLInjection') displayName = 'SQL Injection';
+              else if (d._id === 'HTTPFlood') displayName = 'DDoS Attack';
+              else if (d._id === 'BruteForce') displayName = 'Brute Force';
+              else if (d._id === 'XSS') displayName = 'XSS Attack';
+              else if (d._id === 'DirectoryTraversal') displayName = 'Path Traversal';
+              else if (d._id === 'PortScan') displayName = 'Port Scan';
+              
+              return {
+                name: displayName,
+                value: Math.round((d.count / totalAlerts) * 100)
+              };
+            });
+            setAttackBreakdown(mappedBreakdown);
+          }
         }
       } catch (err) {
         console.warn('Could not fetch real-time stats from backend. Standing by with mock generator.');
