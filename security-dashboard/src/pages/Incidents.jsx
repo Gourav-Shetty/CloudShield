@@ -99,10 +99,20 @@ const Incidents = () => {
       setLoading(true);
       try {
         const response = await api.get('/incidents');
-        if (response.data && Array.isArray(response.data)) {
-          setIncidents(response.data.map(inc => ({
-            ...inc,
-            timestamp: new Date(inc.timestamp)
+        const raw = response.data?.incidents || response.data;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          setIncidents(raw.map(inc => ({
+            id: inc.incidentId || inc._id,
+            status: (inc.status || 'Open').toLowerCase(),
+            severity: (inc.severity || 'medium').toLowerCase(),
+            sourceIp: inc.sourceIP || inc.sourceIp || 'unknown',
+            attackType: inc.attackType || 'Unknown',
+            timestamp: new Date(inc.createdAt || inc.timestamp),
+            timeline: (inc.actionsTaken || []).map(a => ({
+              time: new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              event: `${a.action}: ${a.details || ''}`
+            })),
+            actionsTaken: (inc.actionsTaken || []).map(a => a.action || a)
           })));
         } else {
           setIncidents(generateMockIncidents());
