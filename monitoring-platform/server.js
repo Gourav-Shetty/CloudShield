@@ -64,6 +64,7 @@ app.use('/dashboard', dashboardRoutes);
 app.use('/alerts', alertRoutes);
 app.use('/reports', reportRoutes);
 app.use('/analyze', analyzeRoutes);
+app.get('/ai/detections', (req, res, next) => { req.url = '/detections'; analyzeRoutes(req, res, next); });
 
 // Mount incident routes at /incidents
 app.use('/incidents', incidentRoutes);
