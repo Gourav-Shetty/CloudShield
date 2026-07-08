@@ -84,10 +84,20 @@ const Reports = () => {
       setLoading(true);
       try {
         const response = await api.get('/reports');
-        if (response.data && Array.isArray(response.data)) {
-          setReports(response.data.map(r => ({
-            ...r,
-            date: new Date(r.date)
+        const raw = response.data?.reports || response.data;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          setReports(raw.map(r => ({
+            id: r.reportId || r._id || r.id,
+            ip: r.ipAddress || r.ip || 'unknown',
+            attackType: r.attackType || 'Unknown Attack',
+            severity: (r.severity || 'high').toLowerCase(),
+            date: new Date(r.createdAt || r.date),
+            summary: r.summary || 'Security policy threat response summary.',
+            findings: r.summary || 'No further forensic findings recorded.',
+            timeline: r.timeline ? r.timeline.map(t => ({
+              time: t.timestamp ? new Date(t.timestamp).toLocaleTimeString() : '00:00:00',
+              description: `${t.event}${t.details ? ': ' + t.details : ''}`
+            })) : []
           })));
         } else {
           setReports(generateMockReports());
