@@ -20,10 +20,6 @@
 [![scikit-learn](https://img.shields.io/badge/scikit--learn-IsolationForest-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-<br/>
-
-> *Final Year MCA Project — Bridging Layer 7 application-layer vulnerability logging with Layer 3/4 network-layer automated firewall defense.*
-
 </div>
 
 ---
@@ -33,6 +29,8 @@
 CloudShield AI is a **multi-service cybersecurity platform** that simulates a real-world Security Operations Center (SOC). It deliberately exposes a vulnerable Employee Management Portal as a **honeypot-style bait application**, captures all incoming attack traffic, pipes it through two detection layers — a **signature-based Rule Engine** and an **unsupervised ML anomaly detector** — and autonomously applies **`ufw` firewall blocks** on the hosting server via SSH.
 
 The result is a closed-loop, end-to-end security pipeline: from the attacker's first malicious request all the way to an automatic IP ban, a live SOC dashboard alert, and a full incident report — all within seconds.
+
+Built to bridge the gap between **Layer 7 application-layer vulnerability logging** and **Layer 3/4 network-layer automated firewall defense**.
 
 ---
 
@@ -455,10 +453,6 @@ Expected SOC dashboard response for each: alert created → incident logged → 
 - [ ] **Deep Learning Upgrade** — Replace Isolation Forest with LSTM-based sequence anomaly detection
 
 ---
-
-## 👨‍💻 Author
-
-> Built as a Final Year MCA Project demonstrating the integration of **Machine Learning**, **real-time distributed systems**, **cloud infrastructure**, and **automated cybersecurity response** in a single unified platform.
 
 ---
 
