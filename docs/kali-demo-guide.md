@@ -153,6 +153,28 @@ ab -n 500 -c 10 http://[YOUR_EC2_PUBLIC_IP]:3000/api/employees
 
 ---
 
+---
+
+### Audit 5b: Vulnerability Scanner / User-Agent Auditing (Port Scan)
+* **Goal:** Verify that vulnerability scanners (or simulated port scanning tools) that broadcast known User-Agent profiles are intercepted and blocked.
+* **Mechanism:** The Rule Engine matches the User-Agent header against standard scanner profiles (`nikto`, `sqlmap`, `nmap`, `gobuster`, etc.) and triggers a `Critical` severity alert.
+
+#### Execution Procedure:
+Send an HTTP request simulating a scanner User-Agent using `curl`.
+```bash
+curl -A "Mozilla/5.0 (compatible; Nmap Scripting Engine; http://nmap.org/book/nse.html)" \
+  "http://[YOUR_EC2_PUBLIC_IP]:3000/api/employees"
+```
+
+#### Expected Log Output & Alert:
+1. **Rule Engine Activation:** Matches the `Nmap` string in the User-Agent signature.
+2. **Security Dashboard (SOC):**
+   - A `PortScan` alert of `Critical` severity triggers.
+3. **Response Action:**
+   - The firewall automatically drops packets from the client IP (`sudo ufw deny`).
+
+---
+
 ### Audit 6: Behavioral Anomaly Analysis & AI Score Verification
 * **Goal:** Verify that deviations from a typical user's baseline trigger a threat score elevation from the unsupervised Isolation Forest model.
 * **Mechanism:** The Python AI Microservice evaluates requests based on:

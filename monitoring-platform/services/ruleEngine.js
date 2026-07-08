@@ -57,6 +57,9 @@ const XSS_RE =
 const DIR_TRAVERSAL_RE =
   /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\\|\.\.%2f)/i;
 
+const PORT_SCAN_RE =
+  /(nmap|nikto|sqlmap|dirbuster|gobuster|masscan|w3af|hydra|acunetix|nessus)/i;
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -271,6 +274,21 @@ async function analyzeLog(logData, io) {
         sourceIP: ip,
         description: `HTTP flood from ${ip}: ${recentReqs.length} requests in 60 s`,
         details: { requestCount: recentReqs.length, window: '60s' },
+      },
+      io,
+    );
+  }
+
+  /* ---------- Rule 7: Port Scan / Scanner Detection ---------- */
+  const ua = logData.userAgent || '';
+  if (PORT_SCAN_RE.test(ua)) {
+    return createAlert(
+      {
+        severity: 'Critical',
+        attackType: 'PortScan',
+        sourceIP: ip,
+        description: `Vulnerability scanner / port scan simulation detected from ${ip} (UA: ${ua})`,
+        details: { userAgent: ua },
       },
       io,
     );

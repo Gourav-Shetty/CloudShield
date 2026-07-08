@@ -17,6 +17,7 @@ const alertSchema = new mongoose.Schema({
       'Enumeration',
       'HTTPFlood',
       'AnomalyDetected',
+      'PortScan',
     ],
   },
   sourceIP: {

@@ -132,6 +132,9 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 #### Q15: How are temporary counters cleared in the Rule Engine?
 **A:** The engine runs a cleanup cycle every 30 seconds (`setInterval`) that iterates over in-memory logs and filters out records older than 60 seconds to prevent memory leaks.
 
+#### Q15b: How does the Rule Engine detect Port Scan or Web Application Scanners?
+**A:** It monitors the request headers. If the incoming request has a `User-Agent` string matching common scanning tool signatures (such as `Nmap`, `Nikto`, `sqlmap`, `gobuster`, `dirbuster`), it flags a `PortScan` critical alert and immediately initiates a firewall block.
+
 ---
 
 ### Part 4: AI & Machine Learning Service
