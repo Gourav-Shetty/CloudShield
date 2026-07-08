@@ -20,8 +20,7 @@ const requestLogger = (req, res, next) => {
     let eventType = 'Request';
     if (req.originalUrl.includes('/auth')) {
       eventType = 'Login';
-    }
-    if (res.statusCode >= 400) {
+    } else if (res.statusCode >= 400) {
       eventType = 'Error';
     }
 
