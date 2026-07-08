@@ -29,6 +29,6 @@ const blockedIpSchema = new mongoose.Schema({
   unblockedAt: {
     type: Date,
   },
-});
+}, { collection: 'blocked_ips' });
 
 module.exports = mongoose.model('BlockedIp', blockedIpSchema);

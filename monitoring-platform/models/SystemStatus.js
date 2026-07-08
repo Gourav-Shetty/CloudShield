@@ -36,6 +36,6 @@ const systemStatusSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+}, { collection: 'system_status' });
 
 module.exports = mongoose.model('SystemStatus', systemStatusSchema);

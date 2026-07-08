@@ -38,6 +38,6 @@ const leaveRequestSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+}, { collection: 'leave_requests' });
 
 module.exports = mongoose.model('LeaveRequest', leaveRequestSchema);

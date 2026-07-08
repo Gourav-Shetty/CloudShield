@@ -42,7 +42,7 @@ const attackHistorySchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+}, { collection: 'attack_history' });
 
 /**
  * Auto-generate RPT-XXXX report ID before saving.

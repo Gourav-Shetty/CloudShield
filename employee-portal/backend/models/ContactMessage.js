@@ -28,6 +28,6 @@ const contactMessageSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+}, { collection: 'contact_messages' });
 
 module.exports = mongoose.model('ContactMessage', contactMessageSchema);
