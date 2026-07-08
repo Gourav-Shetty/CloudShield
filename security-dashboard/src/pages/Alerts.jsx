@@ -63,8 +63,18 @@ const Alerts = () => {
       setLoading(true);
       try {
         const response = await api.get('/alerts');
-        if (response.data && Array.isArray(response.data)) {
-          setAlerts(response.data.map(a => ({ ...a, timestamp: new Date(a.timestamp), isNew: false })));
+        const raw = response.data?.alerts || response.data;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          setAlerts(raw.map(a => ({
+            id: a._id || a.id,
+            timestamp: new Date(a.createdAt || a.timestamp),
+            severity: (a.severity || 'low').toLowerCase(),
+            attackType: a.attackType,
+            sourceIp: a.sourceIP || a.sourceIp || 'unknown',
+            description: a.description || '',
+            resolved: a.isResolved || a.resolved || false,
+            isNew: false
+          })));
         } else {
           setAlerts(generateMockAlerts());
         }
@@ -85,10 +95,13 @@ const Alerts = () => {
 
     const handleNewAlert = (alert) => {
       const formattedAlert = {
-        ...alert,
-        id: alert.id || String(Date.now() + Math.random()),
-        timestamp: alert.timestamp ? new Date(alert.timestamp) : new Date(),
-        resolved: false,
+        id: alert._id || alert.id || String(Date.now() + Math.random()),
+        timestamp: new Date(alert.createdAt || alert.timestamp || Date.now()),
+        severity: (alert.severity || 'low').toLowerCase(),
+        attackType: alert.attackType,
+        sourceIp: alert.sourceIP || alert.sourceIp || 'unknown',
+        description: alert.description || '',
+        resolved: alert.isResolved || alert.resolved || false,
         isNew: true
       };
 
