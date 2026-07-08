@@ -67,10 +67,16 @@ const LiveLogs = () => {
     const loadLogs = async () => {
       try {
         const response = await api.get('/logs');
-        if (response.data && Array.isArray(response.data)) {
-          setLogs(response.data.map(l => ({
-            ...l,
-            timestamp: new Date(l.timestamp)
+        const raw = response.data?.logs || response.data;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          setLogs(raw.map(l => ({
+            id: l._id || l.id,
+            timestamp: new Date(l.timestamp),
+            ip: l.ip || 'unknown',
+            method: l.method || 'GET',
+            endpoint: l.endpoint || '/',
+            status: l.status || 200,
+            eventType: l.eventType || 'Nominal'
           })));
         } else {
           setLogs(generateSeedLogs());
