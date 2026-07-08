@@ -78,7 +78,7 @@ const AIDetection = () => {
     const fetchAILogs = async () => {
       try {
         const response = await api.get('/ai/detections');
-        if (response.data && Array.isArray(response.data)) {
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           setAnomalyLog(response.data.map(d => ({
             ...d,
             timestamp: new Date(d.timestamp)
