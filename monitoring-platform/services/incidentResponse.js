@@ -116,19 +116,7 @@ async function handleIncident(alertData, io) {
   });
   await report.save();
 
-  /* --- 3. Check if IP is already blocked --- */
-  const existingBlock = await BlockedIp.findOne({ ip, isActive: true });
-  if (existingBlock) {
-    incident.actionsTaken.push({
-      action: 'IP already blocked',
-      timestamp: new Date(),
-      details: `IP ${ip} was already blocked at ${existingBlock.blockedAt}`,
-    });
-    await incident.save();
-    return incident;
-  }
-
-  /* --- 3.5 Lock Targeted Account (if Brute Force) --- */
+  /* --- 3. Lock Targeted Account (if Brute Force) --- */
   if (alertData.attackType === 'BruteForce') {
     try {
       await lockUserAccount(ip);
@@ -141,6 +129,18 @@ async function handleIncident(alertData, io) {
     } catch (lockErr) {
       console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
     }
+  }
+
+  /* --- 4. Check if IP is already blocked --- */
+  const existingBlock = await BlockedIp.findOne({ ip, isActive: true });
+  if (existingBlock) {
+    incident.actionsTaken.push({
+      action: 'IP already blocked',
+      timestamp: new Date(),
+      details: `IP ${ip} was already blocked at ${existingBlock.blockedAt}`,
+    });
+    await incident.save();
+    return incident;
   }
 
   /* --- 4. SSH block --- */
