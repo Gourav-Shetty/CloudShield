@@ -86,6 +86,56 @@ router.put('/:id/resolve', auth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  PUT /incidents/:id/status — Update incident status                */
+/* ------------------------------------------------------------------ */
+
+router.put('/:id/status', auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
+    const incident = await Incident.findOne({
+      $or: [
+        { _id: req.params.id.match(/^[0-9a-fA-F]{24}$/) ? req.params.id : undefined },
+        { incidentId: req.params.id },
+      ].filter(Boolean),
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    // Capitalize to match backend enum ['Open', 'Investigating', 'Resolved']
+    const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    incident.status = capitalizedStatus;
+
+    if (capitalizedStatus === 'Resolved') {
+      incident.resolvedAt = new Date();
+    }
+
+    incident.actionsTaken.push({
+      action: `Status updated to ${capitalizedStatus}`,
+      timestamp: new Date(),
+      details: `Incident status manually transitioned to ${capitalizedStatus}`,
+    });
+
+    await incident.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('incident-updated', incident);
+    }
+
+    return res.json({ message: 'Incident status updated', incident });
+  } catch (err) {
+    console.error('[Incidents] Status update error:', err.message);
+    return res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  POST /unlock-account — Unlock a user account by IP                */
 /* ------------------------------------------------------------------ */
 
