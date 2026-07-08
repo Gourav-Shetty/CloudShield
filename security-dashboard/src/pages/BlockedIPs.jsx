@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import api from '../api/axios';
-import { FiLock, FiUnlock, FiPlus, FiAlertOctagon, FiClock, FiSearch } from 'react-icons/fi';
+import { FiLock, FiUnlock, FiPlus, FiAlertOctagon, FiClock, FiSearch, FiUserCheck } from 'react-icons/fi';
 
 // Dedicated reactive Countdown Timer cell
 const Countdown = ({ targetDate, onExpire }) => {
@@ -185,6 +185,21 @@ const BlockedIPs = () => {
     }
   };
 
+  // Handle unlocking user accounts associated with an IP
+  const [unlockMessage, setUnlockMessage] = useState('');
+  const handleUnlockAccount = async (ip) => {
+    try {
+      const res = await api.post('/incidents/unlock-account', { ip });
+      const msg = res.data?.message || 'Account unlocked';
+      setUnlockMessage(msg);
+      setTimeout(() => setUnlockMessage(''), 4000);
+    } catch (err) {
+      console.warn(`Unlock account failed for ${ip}.`);
+      setUnlockMessage('Failed to unlock — check server logs.');
+      setTimeout(() => setUnlockMessage(''), 4000);
+    }
+  };
+
   // Called when a timer expires
   const handleTimerExpire = (expiredIp) => {
     // Optionally trigger API unblock or just filter it out of the UI
@@ -199,6 +214,13 @@ const BlockedIPs = () => {
 
   return (
     <div className="space-y-6">
+      {/* Unlock Account Toast */}
+      {unlockMessage && (
+        <div className="fixed top-6 right-6 z-50 px-5 py-3 rounded-lg border bg-dark-800/95 border-cyber-blue/40 text-cyber-blue text-xs font-mono shadow-lg shadow-cyber-blue/10 animate-fade-in flex items-center gap-2">
+          <FiUserCheck className="w-4 h-4" />
+          {unlockMessage}
+        </div>
+      )}
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
@@ -349,13 +371,22 @@ const BlockedIPs = () => {
                       </span>
                     </td>
                     <td className="py-4 px-6 text-center">
-                      <button
-                        onClick={() => handleUnblock(ban.ip)}
-                        className="flex items-center gap-1.5 px-3 py-1 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all mx-auto"
-                      >
-                        <FiUnlock className="w-3.5 h-3.5" />
-                        <span>Unban</span>
-                      </button>
+                      <div className="flex items-center gap-2 justify-center">
+                        <button
+                          onClick={() => handleUnblock(ban.ip)}
+                          className="flex items-center gap-1.5 px-3 py-1 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
+                        >
+                          <FiUnlock className="w-3.5 h-3.5" />
+                          <span>Unban</span>
+                        </button>
+                        <button
+                          onClick={() => handleUnlockAccount(ban.ip)}
+                          className="flex items-center gap-1.5 px-3 py-1 bg-cyber-blue/10 border border-cyber-blue/30 text-cyber-blue hover:bg-cyber-blue/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
+                        >
+                          <FiUserCheck className="w-3.5 h-3.5" />
+                          <span>Unlock Account</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
