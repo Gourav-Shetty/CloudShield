@@ -27,15 +27,22 @@ router.post('/', auth, async (req, res) => {
     // If request comes from the UI manual form, translate its 7 visual features to the Python model's 7 expected features
     if (featureVector.features && featureVector.features.requestRate !== undefined) {
       const f = featureVector.features;
+      
+      // Determine feature amplifications based on simulated threat levels
+      const hasSqli = (f.payloadRisk || 0) > 60;
+      const hasDdos = (f.requestRate || 0) > 70;
+      const hasTraversal = (f.pathDepth || 0) > 60;
+      const hasBruteForce = (f.errorRate || 0) > 70;
+
       aiPayload = {
         features: {
-          requests_per_minute: (f.requestRate || 0) * 60,
-          failed_login_count: (f.errorRate || 0),
-          unique_endpoints: (f.pathDepth || 0),
-          avg_request_interval_ms: f.requestRate > 0 ? 1000 / f.requestRate : 0,
-          session_duration_s: 60,
-          error_rate: f.errorRate ? f.errorRate / 100 : 0,
-          avg_payload_length: f.payloadSize || 0
+          requests_per_minute: hasDdos ? 380 : (f.requestRate || 0) * 3,
+          failed_login_count: hasBruteForce ? 35 : (f.errorRate || 0) / 4,
+          unique_endpoints: hasTraversal ? 75 : (f.pathDepth || 0) / 5,
+          avg_request_interval_ms: hasDdos ? 25 : (f.requestRate > 0 ? 10000 / f.requestRate : 5000),
+          session_duration_s: (hasDdos || hasBruteForce) ? 20 : 300,
+          error_rate: (hasBruteForce || hasSqli) ? 0.8 : (f.errorRate ? f.errorRate / 100 : 0.05),
+          avg_payload_length: hasSqli ? 2800 : (f.payloadSize || 0) * 8
         }
       };
     } else if (featureVector.requestRate !== undefined) {
