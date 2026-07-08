@@ -13,9 +13,11 @@ router.get('/', auth, async (req, res) => {
   try {
     const filter = {};
 
-    // Optional isActive filter via query param
+    // Default to active-only unless explicitly overridden
     if (req.query.isActive !== undefined) {
       filter.isActive = req.query.isActive === 'true';
+    } else {
+      filter.isActive = true;
     }
 
     const blockedIps = await BlockedIp.find(filter)
