@@ -71,15 +71,31 @@ function sshExec(command) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Create an incident, attempt to block the IP via SSH/UFW,
- * and schedule automatic unblocking after 15 minutes.
+ * Create an incident, apply a progressive quarantine (Block, RateLimit, Captcha),
+ * and schedule automatic unblocking/cooldown after 15 minutes.
  *
- * @param {Object} alertData – Alert-like object with sourceIP, severity, attackType, description
- * @param {Object} io        – Socket.IO server instance
+ * @param {Object} alertData      – Alert-like object with sourceIP, severity, attackType, description
+ * @param {Object} io             – Socket.IO server instance
+ * @param {Object} classification – Optional AI classifier prediction result
  */
-async function handleIncident(alertData, io) {
+async function handleIncident(alertData, io, classification = null) {
   const ip = alertData.sourceIP;
   const now = new Date();
+
+  /* --- Determine progressive restriction type --- */
+  let restrictionType = 'Block';
+  let rateLimitRps = 2;
+
+  const predictedClass = classification?.predictedClass || alertData.attackType;
+  
+  if (predictedClass === 'SQLInjection' || predictedClass === 'XSS' || predictedClass === 'PortScan' || (alertData.description && alertData.description.includes('escalation'))) {
+    restrictionType = 'Block';
+  } else if (predictedClass === 'DDoS' || predictedClass === 'HTTPFlood') {
+    restrictionType = 'RateLimit';
+    rateLimitRps = 2; // Allow maximum 2 requests per second
+  } else if (predictedClass === 'BruteForce' || predictedClass === 'Enumeration') {
+    restrictionType = 'Captcha';
+  }
 
   /* --- 1. Create Incident --- */
   const incident = new Incident({
@@ -116,54 +132,65 @@ async function handleIncident(alertData, io) {
   });
   await report.save();
 
-  /* --- 3. Lock Targeted Account (for any attack type) --- */
-  try {
-    const targetUsername = alertData.details?.username || '';
-    await lockUserAccount(ip, targetUsername);
-    incident.actionsTaken.push({
-      action: 'Account Locked',
-      timestamp: new Date(),
-      details: `Locked user account associated with IP ${ip}${targetUsername ? ' / Username ' + targetUsername : ''}`,
-    });
-    report.actionsPerformed.push('Account Locked');
-  } catch (lockErr) {
-    console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
+  /* --- 3. Lock Targeted Account (Only for hard 'Block' restriction) --- */
+  if (restrictionType === 'Block') {
+    try {
+      const targetUsername = alertData.details?.username || '';
+      await lockUserAccount(ip, targetUsername);
+      incident.actionsTaken.push({
+        action: 'Account Locked',
+        timestamp: new Date(),
+        details: `Locked user account associated with IP ${ip}${targetUsername ? ' / Username ' + targetUsername : ''}`,
+      });
+      report.actionsPerformed.push('Account Locked');
+    } catch (lockErr) {
+      console.error(`[IncidentResponse] Lock account failed for ${ip}:`, lockErr.message);
+    }
   }
 
-  /* --- 4. Check if IP is already blocked --- */
+  /* --- 4. Check if IP is already restricted --- */
   const existingBlock = await BlockedIp.findOne({ ip, isActive: true });
   if (existingBlock) {
     incident.actionsTaken.push({
-      action: 'IP already blocked',
+      action: 'IP already restricted',
       timestamp: new Date(),
-      details: `IP ${ip} was already blocked at ${existingBlock.blockedAt}`,
+      details: `IP ${ip} is already restricted with policy: ${existingBlock.restrictionType}`,
     });
     await incident.save();
     return incident;
   }
 
-  /* --- 4. SSH block --- */
+  /* --- 5. SSH Firewall Block (Only for hard 'Block' restriction) --- */
   let sshSuccess = false;
-  try {
-    await sshExec(`sudo ufw deny from ${ip} && echo 'BLOCKED'`);
-    sshSuccess = true;
+  if (restrictionType === 'Block') {
+    try {
+      await sshExec(`sudo ufw deny from ${ip} && echo 'BLOCKED'`);
+      sshSuccess = true;
+      incident.actionsTaken.push({
+        action: 'IP blocked via UFW',
+        timestamp: new Date(),
+        details: `Successfully blocked ${ip} on firewall`,
+      });
+      report.actionsPerformed.push('IP blocked via UFW');
+    } catch (err) {
+      console.error(`[IncidentResponse] SSH block failed for ${ip}:`, err.message);
+      incident.actionsTaken.push({
+        action: 'SSH block failed',
+        timestamp: new Date(),
+        details: `Failed to block ${ip} via SSH: ${err.message}`,
+      });
+      report.actionsPerformed.push(`SSH block failed: ${err.message}`);
+    }
+  } else {
     incident.actionsTaken.push({
-      action: 'IP blocked via UFW',
+      action: 'Dynamic quarantine applied',
       timestamp: new Date(),
-      details: `Successfully blocked ${ip} on firewall`,
+      details: `Applied progressive quarantine: ${restrictionType}`,
     });
-    report.actionsPerformed.push('IP blocked via UFW');
-  } catch (err) {
-    console.error(`[IncidentResponse] SSH block failed for ${ip}:`, err.message);
-    incident.actionsTaken.push({
-      action: 'SSH block failed',
-      timestamp: new Date(),
-      details: `Failed to block ${ip} via SSH: ${err.message}`,
-    });
-    report.actionsPerformed.push(`SSH block failed: ${err.message}`);
+    report.actionsPerformed.push(`Quarantined: ${restrictionType}`);
   }
 
-  /* --- 5. Create BlockedIp document --- */
+  /* --- 6. Create BlockedIp document --- */
   const blockedAt = new Date();
   const unblockAt = new Date(blockedAt.getTime() + 15 * 60 * 1000); // +15 min
 
@@ -174,40 +201,46 @@ async function handleIncident(alertData, io) {
     reason: alertData.description || alertData.attackType,
     attackType: alertData.attackType,
     isActive: true,
+    restrictionType,
+    rateLimitRps,
   });
 
-  /* --- 6. Persist updates --- */
+  /* --- 7. Persist updates --- */
   incident.actionsTaken.push({
     action: 'BlockedIp record created',
     timestamp: new Date(),
-    details: `Block expires at ${unblockAt.toISOString()}`,
+    details: `Restriction type: ${restrictionType}, expires at ${unblockAt.toISOString()}`,
   });
   await incident.save();
   report.timeline.push({
-    event: 'IP blocked',
+    event: 'IP restricted',
     timestamp: new Date(),
-    details: `Blocked until ${unblockAt.toISOString()}`,
+    details: `Restricted under ${restrictionType} policy until ${unblockAt.toISOString()}`,
   });
   await report.save();
 
-  /* --- 7. Socket.IO broadcast --- */
+  /* --- 8. Socket.IO broadcast --- */
   if (io) {
     io.emit('ip-blocked', {
       ip,
       blockedAt,
       unblockAt,
       reason: alertData.description || alertData.attackType,
+      restrictionType,
+      rateLimitRps,
     });
   }
 
-  /* --- 8. Schedule auto-unblock (15 min) --- */
+  /* --- 9. Schedule auto-unblock (15 min) --- */
   setTimeout(async () => {
     try {
-      // Attempt SSH unblock
-      try {
-        await sshExec(`sudo ufw delete deny from ${ip}`);
-      } catch (sshErr) {
-        console.error(`[IncidentResponse] SSH unblock failed for ${ip}:`, sshErr.message);
+      if (restrictionType === 'Block') {
+        // Attempt SSH unblock
+        try {
+          await sshExec(`sudo ufw delete deny from ${ip}`);
+        } catch (sshErr) {
+          console.error(`[IncidentResponse] SSH unblock failed for ${ip}:`, sshErr.message);
+        }
       }
 
       // Update BlockedIp
@@ -225,16 +258,16 @@ async function handleIncident(alertData, io) {
       await Incident.findByIdAndUpdate(incident._id, {
         $push: {
           actionsTaken: {
-            action: 'IP auto-unblocked',
+            action: 'IP restriction expired',
             timestamp: new Date(),
-            details: `Auto-unblocked ${ip} after 15-minute cooldown`,
+            details: `Quarantine expired for ${ip} after 15-minute cooldown`,
           },
         },
       });
 
-      console.log(`[IncidentResponse] Auto-unblocked ${ip}`);
+      console.log(`[IncidentResponse] Restriction expired for ${ip}`);
     } catch (err) {
-      console.error(`[IncidentResponse] Auto-unblock error for ${ip}:`, err.message);
+      console.error(`[IncidentResponse] Cooldown process error for ${ip}:`, err.message);
     }
   }, 15 * 60 * 1000);
 

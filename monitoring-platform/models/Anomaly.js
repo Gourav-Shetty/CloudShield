@@ -22,6 +22,10 @@ const anomalySchema = new mongoose.Schema({
   ip: {
     type: String,
   },
+  classification: {
+    type: Object,
+    default: {},
+  },
   timestamp: {
     type: Date,
     default: Date.now,

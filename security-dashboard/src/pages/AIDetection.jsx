@@ -35,12 +35,12 @@ const AIDetection = () => {
 
   // Anomaly timeline and log state
   const [anomalyLog, setAnomalyLog] = useState([
-    { id: '1', ip: '185.220.101.4', threatScore: 92, label: 'Anomalous', prediction: 'Tor Outbound DDoS Probe', timestamp: new Date(Date.now() - 5 * 60000), features: { requestRate: 95, errorRate: 85, payloadSize: 40, pathDepth: 30, uaEntropy: 95, payloadRisk: 90, ipReputation: 98 } },
-    { id: '2', ip: '198.51.100.42', threatScore: 88, label: 'Anomalous', prediction: 'SQL Injection Sequence', timestamp: new Date(Date.now() - 12 * 60000), features: { requestRate: 50, errorRate: 90, payloadSize: 60, pathDepth: 20, uaEntropy: 45, payloadRisk: 98, ipReputation: 35 } },
-    { id: '3', ip: '192.168.1.50', threatScore: 24, label: 'Normal', prediction: 'Valid User Request', timestamp: new Date(Date.now() - 25 * 60000), features: { requestRate: 20, errorRate: 5, payloadSize: 30, pathDepth: 15, uaEntropy: 30, payloadRisk: 5, ipReputation: 5 } },
-    { id: '4', ip: '203.0.113.110', threatScore: 82, label: 'Anomalous', prediction: 'Syn-Flood Anomaly', timestamp: new Date(Date.now() - 40 * 60000), features: { requestRate: 99, errorRate: 15, payloadSize: 10, pathDepth: 10, uaEntropy: 85, payloadRisk: 5, ipReputation: 75 } },
-    { id: '5', ip: '192.0.2.75', threatScore: 68, label: 'Normal', prediction: 'High Rate Login Failure', timestamp: new Date(Date.now() - 60 * 60000), features: { requestRate: 75, errorRate: 70, payloadSize: 40, pathDepth: 20, uaEntropy: 35, payloadRisk: 15, ipReputation: 12 } },
-    { id: '6', ip: '10.0.0.15', threatScore: 12, label: 'Normal', prediction: 'Internal Node Baseline', timestamp: new Date(Date.now() - 90 * 60000), features: { requestRate: 10, errorRate: 2, payloadSize: 20, pathDepth: 10, uaEntropy: 15, payloadRisk: 2, ipReputation: 2 } }
+    { id: '1', ip: '185.220.101.4', threatScore: 92, label: 'Anomalous', prediction: 'Tor Outbound DDoS Probe', classification: { predictedClass: 'DDoS', confidence: 0.985 }, timestamp: new Date(Date.now() - 5 * 60000), features: { requestRate: 95, errorRate: 85, payloadSize: 40, pathDepth: 30, uaEntropy: 95, payloadRisk: 90, ipReputation: 98 } },
+    { id: '2', ip: '198.51.100.42', threatScore: 88, label: 'Anomalous', prediction: 'SQL Injection Sequence', classification: { predictedClass: 'SQLInjection', confidence: 0.992 }, timestamp: new Date(Date.now() - 12 * 60000), features: { requestRate: 50, errorRate: 90, payloadSize: 60, pathDepth: 20, uaEntropy: 45, payloadRisk: 98, ipReputation: 35 } },
+    { id: '3', ip: '192.168.1.50', threatScore: 24, label: 'Normal', prediction: 'Valid User Request', classification: { predictedClass: 'Normal', confidence: 0.999 }, timestamp: new Date(Date.now() - 25 * 60000), features: { requestRate: 20, errorRate: 5, payloadSize: 30, pathDepth: 15, uaEntropy: 30, payloadRisk: 5, ipReputation: 5 } },
+    { id: '4', ip: '203.0.113.110', threatScore: 82, label: 'Anomalous', prediction: 'Syn-Flood Anomaly', classification: { predictedClass: 'DDoS', confidence: 0.941 }, timestamp: new Date(Date.now() - 40 * 60000), features: { requestRate: 99, errorRate: 15, payloadSize: 10, pathDepth: 10, uaEntropy: 85, payloadRisk: 5, ipReputation: 75 } },
+    { id: '5', ip: '192.0.2.75', threatScore: 68, label: 'Normal', prediction: 'High Rate Login Failure', classification: { predictedClass: 'BruteForce', confidence: 0.825 }, timestamp: new Date(Date.now() - 60 * 60000), features: { requestRate: 75, errorRate: 70, payloadSize: 40, pathDepth: 20, uaEntropy: 35, payloadRisk: 15, ipReputation: 12 } },
+    { id: '6', ip: '10.0.0.15', threatScore: 12, label: 'Normal', prediction: 'Internal Node Baseline', classification: { predictedClass: 'Normal', confidence: 0.998 }, timestamp: new Date(Date.now() - 90 * 60000), features: { requestRate: 10, errorRate: 2, payloadSize: 20, pathDepth: 10, uaEntropy: 15, payloadRisk: 2, ipReputation: 2 } }
   ]);
 
   // Selected IP to display in the Radar Chart (defaults to first in list)
@@ -103,10 +103,9 @@ const AIDetection = () => {
     setAnalyzing(true);
     setAnalysisResult(null);
 
-    // Compute mock results if API fails (Normal if mean feature risk < 70)
+    // Compute mock results if API fails
     const sum = Object.values(formData).reduce((acc, v) => (typeof v === 'number' ? acc + v : acc), 0);
     const mean = Math.floor(sum / 7);
-    // Add weights to errorRate & payloadRisk
     const weightedScore = Math.min(100, Math.floor(mean * 0.7 + formData.payloadRisk * 0.15 + formData.errorRate * 0.15));
     
     let prediction = 'Normal Request Baseline';
@@ -127,6 +126,12 @@ const AIDetection = () => {
       threatScore: weightedScore,
       label,
       prediction,
+      classification: {
+        predictedClass: label === 'Anomalous' 
+          ? (formData.payloadRisk > 70 ? 'SQLInjection' : (formData.requestRate > 80 ? 'DDoS' : 'BruteForce'))
+          : 'Normal',
+        confidence: Number((0.85 + Math.random() * 0.14).toFixed(4))
+      },
       timestamp: new Date(),
       features: {
         requestRate: formData.requestRate,
@@ -140,8 +145,29 @@ const AIDetection = () => {
     };
 
     try {
+      // Map sliders (0-100) to actual model inputs
+      const mappedFeatures = {
+        requests_per_minute: formData.requestRate * 4,
+        failed_login_count: Math.round(formData.errorRate / 4),
+        unique_endpoints: Math.max(1, Math.round(formData.pathDepth / 8)),
+        avg_request_interval_ms: formData.requestRate > 0 ? Math.round(60000 / (formData.requestRate * 4)) : 5000,
+        session_duration_s: 300,
+        error_rate: formData.errorRate / 100,
+        avg_payload_length: formData.payloadRisk * 40
+      };
+
       const response = await api.post('/analyze', {
-        ip: formData.ip,
+        features: mappedFeatures
+      });
+
+      const serverOutput = {
+        ...response.data,
+        id: response.data.id || String(Date.now()),
+        classification: response.data.classification || {
+          predictedClass: response.data.prediction || (weightedScore >= 80 ? 'SQLInjection' : 'Normal'),
+          confidence: 1.0
+        },
+        timestamp: response.data.timestamp ? new Date(response.data.timestamp) : new Date(),
         features: {
           requestRate: formData.requestRate,
           errorRate: formData.errorRate,
@@ -151,12 +177,6 @@ const AIDetection = () => {
           payloadRisk: formData.payloadRisk,
           ipReputation: formData.ipReputation
         }
-      });
-
-      const serverOutput = {
-        ...response.data,
-        id: response.data.id || String(Date.now()),
-        timestamp: response.data.timestamp ? new Date(response.data.timestamp) : new Date()
       };
       
       setAnomalyLog(prev => [serverOutput, ...prev]);
@@ -268,16 +288,21 @@ const AIDetection = () => {
                   <tr className="border-b border-gray-800 text-[10px] font-mono uppercase tracking-wider text-gray-500">
                     <th className="py-2.5 px-3">IP Address</th>
                     <th className="py-2.5 px-3">Risk Level</th>
-                    <th className="py-2.5 px-3">AI Prediction</th>
-                    <th className="py-2.5 px-3">Classification</th>
+                    <th className="py-2.5 px-3">AI Classification</th>
+                    <th className="py-2.5 px-3">Label</th>
                     <th className="py-2.5 px-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/40 font-mono text-xs">
                   {anomalyLog.map((log) => {
                     const isSelected = selectedAuditId === log.id;
-                    const isAnomalous = log.label === 'Anomalous';
+                    const isAnomalous = log.label === 'Anomalous' || log.label === 'Malicious' || log.threatScore >= 80;
                     
+                    const dispLabel = log.label || (isAnomalous ? 'Malicious' : 'Safe');
+                    const classificationText = log.classification?.predictedClass 
+                      ? `${log.classification.predictedClass} (${Math.round((log.classification.confidence ?? 1.0) * 100)}%)` 
+                      : log.prediction;
+
                     return (
                       <tr 
                         key={log.id} 
@@ -295,14 +320,14 @@ const AIDetection = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-white font-medium">{log.prediction}</td>
+                        <td className="py-3 px-3 text-white font-medium">{classificationText}</td>
                         <td className="py-3 px-3">
                           <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold border ${
                             isAnomalous 
                               ? 'severity-critical shadow-[0_0_6px_rgba(255,51,102,0.1)]' 
                               : 'severity-low'
                           }`}>
-                            {log.label}
+                            {dispLabel}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right">
@@ -375,16 +400,17 @@ const AIDetection = () => {
           {/* Form Results Banner */}
           {analysisResult && (
             <div className={`p-4 rounded-lg border font-mono text-xs ${
-              analysisResult.label === 'Anomalous' 
+              analysisResult.threatScore >= 80 || analysisResult.label === 'Anomalous' || analysisResult.label === 'Malicious'
                 ? 'bg-cyber-red/10 border-cyber-red/30 text-cyber-red' 
                 : 'bg-cyber-green/10 border-cyber-green/30 text-cyber-green'
             } animate-fade-in`}>
               <div className="flex items-center justify-between font-bold">
-                <span>PREDICTION: {analysisResult.label.toUpperCase()}</span>
-                <span>RISK: {analysisResult.threatScore}%</span>
+                <span>RISK SCORE: {analysisResult.threatScore}%</span>
+                <span>STATUS: {analysisResult.threatScore >= 80 ? 'MALICIOUS' : 'SAFE'}</span>
               </div>
               <p className="text-[10px] text-gray-300 mt-1 uppercase tracking-tight">
-                Classification: {analysisResult.prediction}
+                Classification: {analysisResult.classification?.predictedClass || analysisResult.prediction || 'Normal'} 
+                {analysisResult.classification?.confidence ? ` (${Math.round(analysisResult.classification.confidence * 100)}% Conf)` : ''}
               </p>
             </div>
           )}

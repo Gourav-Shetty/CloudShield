@@ -26,6 +26,15 @@ const blockedIpSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  restrictionType: {
+    type: String,
+    enum: ['Block', 'RateLimit', 'Captcha'],
+    default: 'Block',
+  },
+  rateLimitRps: {
+    type: Number,
+    default: 2,
+  },
   unblockedAt: {
     type: Date,
   },

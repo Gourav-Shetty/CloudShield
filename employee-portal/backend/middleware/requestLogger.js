@@ -16,6 +16,15 @@ const requestLogger = (req, res, next) => {
   const originalSend = res.send.bind(res);
 
   const logAndForward = (originalMethod, body) => {
+    // Exclude CAPTCHA challenges from being logged to prevent double-counting
+    let parsedBody = {};
+    try {
+      parsedBody = typeof body === 'string' ? JSON.parse(body) : body;
+    } catch (_) {}
+    if (parsedBody && parsedBody.captchaRequired) {
+      return originalMethod(body);
+    }
+
     // Determine event type
     let eventType = 'Request';
     if (req.originalUrl.includes('/auth')) {
@@ -31,7 +40,12 @@ const requestLogger = (req, res, next) => {
 
     // Fire-and-forget — don't await
     sendLog({
-      ip: req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress,
+      ip: (() => {
+        let ip = req.headers['x-forwarded-for'] || req.ip || req.connection?.remoteAddress || '';
+        if (ip === '::1' || ip === '::ffff:127.0.0.1' || ip === '127.0.0.1') return '127.0.0.1';
+        if (ip.startsWith('::ffff:')) return ip.substring(7);
+        return ip;
+      })(),
       method: req.method,
       endpoint: req.originalUrl,
       status: res.statusCode,

@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  FiHome, 
-  FiUsers, 
-  FiCalendar, 
-  FiMail, 
-  FiUser, 
-  FiLogOut, 
-  FiMenu, 
-  FiX, 
-  FiChevronLeft, 
+import {
+  FiHome,
+  FiUsers,
+  FiCalendar,
+  FiMail,
+  FiUser,
+  FiLogOut,
+  FiMenu,
+  FiX,
+  FiChevronLeft,
   FiChevronRight,
-  FiBell
+  FiBell,
+  FiShield,
 } from 'react-icons/fi';
 
 const Layout = ({ children }) => {
@@ -35,46 +36,61 @@ const Layout = ({ children }) => {
     navigate('/login');
   };
 
+  const currentPage = menuItems.find(item => item.path === location.pathname)?.name || 'Employee Portal';
+  const userInitials = user?.username?.substring(0, 2)?.toUpperCase() || 'US';
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
       {/* Mobile sidebar backdrop */}
       {mobileSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden"
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - Desktop & Mobile */}
-      <aside 
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-primary-900 text-white transition-all duration-300 ease-in-out lg:static
-          ${sidebarOpen ? 'w-64' : 'w-20'} 
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 ease-in-out lg:static
+          ${sidebarOpen ? 'w-64' : 'w-[72px]'}
           ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
+        style={{ background: 'linear-gradient(180deg, #0f172a 0%, #0f2361 60%, #1e3a8a 100%)' }}
       >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-primary-800 bg-primary-950">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary-500 text-white font-bold shrink-0 shadow-md">
-              CS
+        {/* Sidebar Header / Logo */}
+        <div className="flex items-center justify-between h-16 px-4 shrink-0 border-b border-white/5">
+          <div className="flex items-center space-x-3 overflow-hidden min-w-0">
+            {/* Shield icon */}
+            <div className="shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-900/40">
+              <FiShield size={18} className="text-white" />
             </div>
             {sidebarOpen && (
-              <span className="font-semibold text-lg tracking-wider whitespace-nowrap bg-gradient-to-r from-blue-200 to-white bg-clip-text text-transparent">
-                CloudShield AI
-              </span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-white font-bold text-sm tracking-wide leading-tight whitespace-nowrap">
+                  CLOUDSHIELD CORP
+                </span>
+                <span className="text-primary-300/70 text-[10px] font-medium tracking-widest uppercase">
+                  HR Portal
+                </span>
+              </div>
             )}
           </div>
-          {/* Close mobile menu */}
-          <button 
+          {/* Mobile close */}
+          <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="p-1 rounded-md text-primary-300 hover:text-white hover:bg-primary-800 lg:hidden"
+            className="p-1.5 rounded-lg text-primary-300 hover:text-white hover:bg-white/10 lg:hidden transition-colors"
           >
-            <FiX size={20} />
+            <FiX size={18} />
           </button>
         </div>
 
-        {/* Sidebar Nav Links */}
-        <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
+        {/* Nav Links */}
+        <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
+          {!sidebarOpen && (
+            <div className="mb-4 flex items-center justify-center">
+              <div className="h-px w-8 bg-white/10" />
+            </div>
+          )}
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -83,18 +99,34 @@ const Layout = ({ children }) => {
                 key={item.name}
                 to={item.path}
                 onClick={() => setMobileSidebarOpen(false)}
-                className={`flex items-center px-3.5 py-3 rounded-xl transition-all duration-200 group relative
-                  ${isActive 
-                    ? 'bg-primary-600 text-white font-medium shadow-lg shadow-primary-900/40' 
-                    : 'text-primary-200 hover:bg-primary-800/60 hover:text-white'
+                className={`flex items-center rounded-xl transition-all duration-200 group relative overflow-hidden
+                  ${sidebarOpen ? 'px-3.5 py-3' : 'px-0 py-3 justify-center'}
+                  ${isActive
+                    ? 'bg-primary-500/20 text-white'
+                    : 'text-primary-200/70 hover:text-white hover:bg-white/[0.07]'
                   }
                 `}
               >
-                <Icon size={20} className={`shrink-0 ${isActive ? 'text-white' : 'text-primary-300 group-hover:text-white'}`} />
+                {/* Active left accent bar */}
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_2px_rgba(96,165,250,0.5)]" />
+                )}
+
+                <Icon
+                  size={18}
+                  className={`shrink-0 transition-colors duration-200
+                    ${isActive ? 'text-blue-300' : 'text-primary-300/60 group-hover:text-primary-100'}
+                    ${sidebarOpen ? '' : ''}
+                  `}
+                />
+
                 {sidebarOpen ? (
-                  <span className="ml-3 text-sm transition-opacity duration-200">{item.name}</span>
+                  <span className={`ml-3 text-sm font-medium transition-opacity duration-200 ${isActive ? 'text-white font-semibold' : ''}`}>
+                    {item.name}
+                  </span>
                 ) : (
-                  <span className="absolute left-16 scale-0 rounded bg-slate-900 px-2 py-1 text-xs text-white group-hover:scale-100 transition-all z-50 shadow-md whitespace-nowrap">
+                  /* Tooltip when collapsed */
+                  <span className="absolute left-[72px] opacity-0 pointer-events-none scale-95 group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto rounded-lg bg-slate-900 border border-white/10 px-3 py-1.5 text-xs text-white font-medium transition-all z-50 shadow-xl whitespace-nowrap">
                     {item.name}
                   </span>
                 )}
@@ -103,90 +135,117 @@ const Layout = ({ children }) => {
           })}
         </nav>
 
-        {/* Sidebar Collapse Toggle Button (Desktop Only) */}
-        <div className="hidden lg:block border-t border-primary-800 p-4">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="flex items-center justify-center w-full py-2.5 rounded-lg border border-primary-800 text-primary-300 hover:text-white hover:bg-primary-800/50 transition-all duration-200"
-          >
-            {sidebarOpen ? (
-              <div className="flex items-center space-x-2 text-xs">
-                <FiChevronLeft size={16} />
-                <span>Collapse Menu</span>
+        {/* System Status */}
+        {sidebarOpen && (
+          <div className="px-4 py-3 mx-3 mb-3 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+            <div className="flex items-center gap-2.5">
+              <div className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </div>
-            ) : (
-              <FiChevronRight size={16} />
-            )}
-          </button>
-        </div>
-
-        {/* Sidebar Footer / User Info when open */}
-        {sidebarOpen && user && (
-          <div className="border-t border-primary-800 p-4 bg-primary-950/40 lg:block hidden">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-full bg-primary-700 flex items-center justify-center font-semibold text-white uppercase shadow-inner border border-primary-600">
-                {user.username.substring(0, 2)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate text-white">{user.username}</p>
-                <p className="text-xs text-primary-400 capitalize truncate">{user.role}</p>
+              <div>
+                <p className="text-[11px] font-semibold text-emerald-400 leading-tight">System Online</p>
+                <p className="text-[10px] text-primary-300/50 leading-tight">All services operational</p>
               </div>
             </div>
           </div>
         )}
+
+        {/* User info strip in sidebar */}
+        {sidebarOpen && user && (
+          <div className="border-t border-white/[0.07] px-4 py-4 bg-black/20">
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-sm font-bold uppercase shadow-inner border border-white/20 shrink-0">
+                {userInitials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{user.username}</p>
+                <p className="text-xs text-primary-300/60 capitalize truncate">{user.role}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Collapse toggle (desktop) */}
+        <div className="hidden lg:block border-t border-white/[0.07] p-3">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className={`flex items-center justify-center w-full py-2.5 rounded-lg text-primary-300/60 hover:text-white hover:bg-white/10 transition-all duration-200 text-xs font-medium gap-2 ${!sidebarOpen ? 'px-0' : 'px-3'}`}
+          >
+            {sidebarOpen ? (
+              <>
+                <FiChevronLeft size={15} />
+                <span>Collapse</span>
+              </>
+            ) : (
+              <FiChevronRight size={15} />
+            )}
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Navbar */}
-        <header className="flex items-center justify-between h-16 px-6 bg-white border-b border-slate-200/80 shadow-sm shrink-0">
-          <div className="flex items-center space-x-3">
-            {/* Hamburger for mobile */}
+        <header className="flex items-center justify-between h-16 px-5 bg-white border-b border-slate-100 shrink-0 z-30">
+          <div className="flex items-center gap-3">
+            {/* Hamburger mobile */}
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 lg:hidden focus:outline-none"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 lg:hidden transition-colors focus:outline-none"
             >
-              <FiMenu size={22} />
+              <FiMenu size={20} />
             </button>
-            <h1 className="text-lg font-semibold text-slate-800 hidden sm:block">
-              {menuItems.find(item => item.path === location.pathname)?.name || 'Employee Portal'}
-            </h1>
+
+            {/* Breadcrumb / Page title */}
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">CloudShield Corp</span>
+              <span className="text-slate-200">/</span>
+              <span className="text-sm font-semibold text-slate-800">{currentPage}</span>
+            </div>
           </div>
 
-          {/* User profile dropdown and Logout */}
-          <div className="flex items-center space-x-4">
-            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors relative">
-              <FiBell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+          {/* Right side actions */}
+          <div className="flex items-center gap-2">
+            {/* Notification Bell */}
+            <button className="relative p-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all duration-150 focus:outline-none">
+              <FiBell size={18} />
+              <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white leading-none">
+                3
+              </span>
             </button>
 
-            <div className="h-6 w-[1px] bg-slate-200"></div>
+            <div className="h-6 w-px bg-slate-100 mx-1" />
 
+            {/* User avatar + info */}
             {user && (
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center gap-3">
                 <div className="text-right hidden md:block">
-                  <p className="text-sm font-semibold text-slate-700">{user.username}</p>
-                  <p className="text-xs text-slate-400 capitalize">{user.role}</p>
+                  <p className="text-sm font-semibold text-slate-700 leading-tight">{user.username}</p>
+                  <p className="text-xs text-slate-400 capitalize leading-tight">{user.role}</p>
                 </div>
-                <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 font-semibold flex items-center justify-center uppercase border border-primary-200">
-                  {user.username.substring(0, 2)}
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-sm font-bold uppercase shadow-sm shadow-primary-500/30 border-2 border-primary-100 cursor-pointer hover:shadow-md transition-shadow">
+                  {userInitials}
                 </div>
               </div>
             )}
 
+            <div className="h-6 w-px bg-slate-100 mx-1" />
+
+            {/* Logout */}
             <button
               onClick={handleLogout}
               title="Logout"
-              className="flex items-center space-x-1.5 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-150"
             >
-              <FiLogOut size={16} />
+              <FiLogOut size={15} />
               <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
         </header>
 
-        {/* Content Wrapper */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-5 md:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             {children}
           </div>

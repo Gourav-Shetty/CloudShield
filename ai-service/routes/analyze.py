@@ -10,14 +10,16 @@ from flask import Blueprint, jsonify, request
 
 analyze_bp = Blueprint("analyze", __name__)
 
-# The detector instance is injected by app.py after the model is trained.
+# Model references injected by app.py
 _detector = None
+_classifier = None
 
 
-def init_detector(detector) -> None:
-    """Store a reference to the trained :class:`ThreatDetector`."""
-    global _detector
+def init_models(detector, classifier) -> None:
+    """Store references to trained models."""
+    global _detector, _classifier
     _detector = detector
+    _classifier = classifier
 
 
 # ── POST /analyze ───────────────────────────────────────────────────────────
@@ -75,10 +77,12 @@ def analyze():
         }), 400
 
     # ── Run prediction ──────────────────────────────────────────────────
-    if _detector is None:
-        return jsonify({"error": "Model not loaded"}), 503
+    if _detector is None or _classifier is None:
+        return jsonify({"error": "Models not loaded"}), 503
 
     result = _detector.predict(features)
+    class_result = _classifier.predict_class(features)
+    result["classification"] = class_result
     result["timestamp"] = datetime.now(timezone.utc).isoformat()
     return jsonify(result), 200
 

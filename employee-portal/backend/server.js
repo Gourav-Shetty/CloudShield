@@ -47,7 +47,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(requestLogger);
 
 // Check if client IP is security-blocked
-const checkIpBlock = require('./middleware/checkIpBlock');
+const { checkIpBlock } = require('./middleware/checkIpBlock');
 app.use(checkIpBlock);
 
 // ---------------------------------------------------------------------------

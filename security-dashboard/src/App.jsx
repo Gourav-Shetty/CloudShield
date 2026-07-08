@@ -19,8 +19,14 @@ const ProtectedRoute = ({ children }) => {
   
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-dark-900 text-gray-500 font-mono text-xs select-none">
-        <span className="animate-pulse">DECRYPTING_SECURITY_LEASE_HANDSHAKE...</span>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#060910] select-none">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,212,255,0.025)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,212,255,0.025)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
+        <div className="relative flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-2 border-cyber-blue/30 border-t-cyber-blue animate-spin" />
+          <span className="text-[10px] font-mono text-gray-600 uppercase tracking-[0.3em] animate-pulse">
+            DECRYPTING_SECURITY_LEASE_HANDSHAKE...
+          </span>
+        </div>
       </div>
     );
   }

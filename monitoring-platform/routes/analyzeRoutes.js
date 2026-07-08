@@ -105,7 +105,7 @@ router.post('/', auth, async (req, res) => {
       message: 'Analysis complete',
       id: anomaly._id,
       threatScore: anomaly.threatScore,
-      label: anomaly.label === 'Malicious' || anomaly.label === 'Anomalous' ? 'Anomalous' : 'Normal',
+      label: anomaly.label || (anomaly.threatScore >= 80 ? 'Anomalous' : 'Normal'),
       prediction: getDescriptivePrediction(anomaly.threatScore, featureObj),
       timestamp: anomaly.timestamp,
       features: anomaly.featureVector,
@@ -154,7 +154,7 @@ router.get('/detections', auth, async (req, res) => {
       id: a._id,
       ip: a.ip,
       threatScore: a.threatScore,
-      label: a.label === 'Malicious' || a.label === 'Anomalous' ? 'Anomalous' : 'Normal',
+      label: a.label || (a.threatScore >= 80 ? 'Anomalous' : 'Normal'),
       prediction: getDescriptivePrediction(a.threatScore, a.featureVector),
       timestamp: a.timestamp,
       features: a.featureVector

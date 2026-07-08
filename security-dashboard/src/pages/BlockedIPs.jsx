@@ -61,10 +61,10 @@ const BlockedIPs = () => {
   const generateMockBlocks = () => {
     const now = Date.now();
     return [
-      { ip: '185.220.101.4', blockedAt: new Date(now - 120000), unblockAt: new Date(now + 180000), reason: 'Tor Node DDoS Signature Probe', status: 'active' }, // Expires in 3 mins
-      { ip: '198.51.100.42', blockedAt: new Date(now - 900000), unblockAt: new Date(now + 2700000), reason: 'SQL Injection Sequence', status: 'active' }, // Expires in 45 mins
-      { ip: '203.0.113.110', blockedAt: new Date(now - 1800000), unblockAt: new Date(now + 5400000), reason: 'Brute Force Flood Pattern', status: 'active' }, // Expires in 1.5 hrs
-      { ip: '192.0.2.75', blockedAt: new Date(now - 3600000), unblockAt: new Date(now + 82800000), reason: 'Critical SSH Auth Stuffing', status: 'active' } // Expires in 23 hrs
+      { ip: '185.220.101.4', blockedAt: new Date(now - 120000), unblockAt: new Date(now + 180000), reason: 'Tor Node DDoS Signature Probe', status: 'active', restrictionType: 'RateLimit', rateLimitRps: 2 },
+      { ip: '198.51.100.42', blockedAt: new Date(now - 900000), unblockAt: new Date(now + 2700000), reason: 'SQL Injection Sequence', status: 'active', restrictionType: 'Block' },
+      { ip: '203.0.113.110', blockedAt: new Date(now - 1800000), unblockAt: new Date(now + 5400000), reason: 'Brute Force Flood Pattern', status: 'active', restrictionType: 'Captcha' },
+      { ip: '192.0.2.75', blockedAt: new Date(now - 3600000), unblockAt: new Date(now + 82800000), reason: 'Critical SSH Auth Stuffing', status: 'active', restrictionType: 'Block' }
     ];
   };
 
@@ -74,7 +74,7 @@ const BlockedIPs = () => {
       try {
         const response = await api.get('/ip/blocks');
         const raw = response.data?.blockedIps || response.data;
-        if (raw && Array.isArray(raw) && raw.length > 0) {
+        if (raw && Array.isArray(raw)) {
           setBlockedList(raw.map(b => ({
             ...b,
             id: b._id || b.id,
@@ -331,7 +331,7 @@ const BlockedIPs = () => {
                 <th className="py-4 px-6">Enforced At</th>
                 <th className="py-4 px-6">Duration Countdown</th>
                 <th className="py-4 px-6">Block Reason</th>
-                <th className="py-4 px-6">Lease Status</th>
+                <th className="py-4 px-6">Restriction Policy</th>
                 <th className="py-4 px-6 text-center">Action</th>
               </tr>
             </thead>
@@ -343,53 +343,76 @@ const BlockedIPs = () => {
                   </td>
                 </tr>
               ) : (
-                filteredList.map((ban) => (
-                  <tr 
-                    key={ban.ip} 
-                    className="hover:bg-dark-800/20 transition-all duration-300 relative border-l-2 border-cyber-red/20 group"
-                  >
-                    <td className="py-4 px-6 text-cyber-red font-bold font-mono tracking-wide relative">
-                      {ban.ip}
-                      {/* Active glow dot */}
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-red ml-2 animate-ping opacity-60"></span>
-                    </td>
-                    <td className="py-4 px-6 text-gray-400">
-                      {new Date(ban.blockedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-1.5">
-                        <FiClock className="w-3.5 h-3.5 text-gray-500" />
-                        <Countdown targetDate={ban.unblockAt} onExpire={() => handleTimerExpire(ban.ip)} />
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-gray-300 max-w-xs truncate" title={ban.reason}>
-                      {ban.reason}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-cyber-red/10 border border-cyber-red/20 text-cyber-red shadow-[0_0_8px_rgba(255,51,102,0.1)]">
-                        Active Banned
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <div className="flex items-center gap-2 justify-center">
-                        <button
-                          onClick={() => handleUnblock(ban.ip)}
-                          className="flex items-center gap-1.5 px-3 py-1 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
-                        >
-                          <FiUnlock className="w-3.5 h-3.5" />
-                          <span>Unban</span>
-                        </button>
-                        <button
-                          onClick={() => handleUnlockAccount(ban.ip)}
-                          className="flex items-center gap-1.5 px-3 py-1 bg-cyber-blue/10 border border-cyber-blue/30 text-cyber-blue hover:bg-cyber-blue/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
-                        >
-                          <FiUserCheck className="w-3.5 h-3.5" />
-                          <span>Unlock Account</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                filteredList.map((ban) => {
+                  const policy = ban.restrictionType || 'Block';
+                  let ipColor = 'text-cyber-red';
+                  let dotColor = 'bg-cyber-red';
+                  let rowBorder = 'border-cyber-red/30';
+                  
+                  if (policy === 'RateLimit') {
+                    ipColor = 'text-cyber-yellow';
+                    dotColor = 'bg-cyber-yellow';
+                    rowBorder = 'border-cyber-yellow/30';
+                  } else if (policy === 'Captcha') {
+                    ipColor = 'text-cyber-purple';
+                    dotColor = 'bg-cyber-purple';
+                    rowBorder = 'border-cyber-purple/30';
+                  }
+
+                  return (
+                    <tr 
+                      key={ban.ip} 
+                      className={`hover:bg-dark-800/20 transition-all duration-300 relative border-l-2 group ${rowBorder}`}
+                    >
+                      <td className={`py-4 px-6 font-bold font-mono tracking-wide relative ${ipColor}`}>
+                        {ban.ip}
+                        {/* Active glow dot */}
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ml-2 animate-ping opacity-60 ${dotColor}`}></span>
+                      </td>
+                      <td className="py-4 px-6 text-gray-400">
+                        {new Date(ban.blockedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-1.5">
+                          <FiClock className="w-3.5 h-3.5 text-gray-500" />
+                          <Countdown targetDate={ban.unblockAt} onExpire={() => handleTimerExpire(ban.ip)} />
+                        </div>
+                      </td>
+                      <td className="py-4 px-6 text-gray-300 max-w-xs truncate" title={ban.reason}>
+                        {ban.reason}
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                          policy === 'Block' 
+                            ? 'bg-cyber-red/10 border-cyber-red/20 text-cyber-red shadow-[0_0_8px_rgba(255,51,102,0.1)]'
+                            : policy === 'RateLimit'
+                            ? 'bg-cyber-yellow/10 border-cyber-yellow/20 text-cyber-yellow shadow-[0_0_8px_rgba(255,170,0,0.1)]'
+                            : 'bg-cyber-purple/10 border-cyber-purple/20 text-cyber-purple shadow-[0_0_8px_rgba(168,85,247,0.1)]'
+                        }`}>
+                          {policy} {policy === 'RateLimit' ? `(${ban.rateLimitRps} RPS)` : ''}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <div className="flex items-center gap-2 justify-center">
+                          <button
+                            onClick={() => handleUnblock(ban.ip)}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
+                          >
+                            <FiUnlock className="w-3.5 h-3.5" />
+                            <span>Unban</span>
+                          </button>
+                          <button
+                            onClick={() => handleUnlockAccount(ban.ip)}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-cyber-blue/10 border border-cyber-blue/30 text-cyber-blue hover:bg-cyber-blue/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
+                          >
+                            <FiUserCheck className="w-3.5 h-3.5" />
+                            <span>Unlock Account</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

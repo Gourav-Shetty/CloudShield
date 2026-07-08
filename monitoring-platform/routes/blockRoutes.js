@@ -80,7 +80,12 @@ router.delete('/:id', auth, async (req, res) => {
 /* ------------------------------------------------------------------ */
 router.get('/check/:ip', async (req, res) => {
   try {
-    const { ip } = req.params;
+    let { ip } = req.params;
+    if (ip === '::1' || ip === '::ffff:127.0.0.1' || ip === '127.0.0.1') {
+      ip = '127.0.0.1';
+    } else if (ip.startsWith('::ffff:')) {
+      ip = ip.substring(7);
+    }
     const block = await BlockedIp.findOne({ ip, isActive: true }).lean();
     return res.json({ blocked: !!block, block });
   } catch (err) {

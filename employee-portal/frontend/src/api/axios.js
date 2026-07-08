@@ -35,19 +35,60 @@ api.interceptors.request.use(
   }
 );
 
+let captchaHandler = null;
+
+export const registerCaptchaHandler = (handler) => {
+  captchaHandler = handler;
+};
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 403 && error.response.data?.isIpBlocked) {
+    const responseData = error.response?.data;
+    
+    // ── 1. HARD IP BLOCK ──
+    if (error.response && error.response.status === 403 && responseData?.isIpBlocked) {
       localStorage.removeItem('token');
       localStorage.removeItem('user_profile');
-      localStorage.setItem('login_error', error.response.data.message || 'Access denied due to a security violation.');
+      localStorage.setItem('login_error', responseData.message || 'Access denied due to a security violation.');
       
-      // Redirect to login page
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }
     }
+
+    // ── 2. CAPTCHA CHALLENGE RETRY ──
+    if (error.response && error.response.status === 403 && responseData?.captchaRequired) {
+      if (captchaHandler) {
+        return new Promise((resolve, reject) => {
+          captchaHandler(responseData.message)
+            .then((token) => {
+              // Re-inject token safely across all Axios header formats
+              const config = error.config;
+              if (config.headers && typeof config.headers.set === 'function') {
+                config.headers.set('x-captcha-token', token);
+              }
+              config.headers = {
+                ...config.headers,
+                'x-captcha-token': token
+              };
+              resolve(api(config));
+            })
+            .catch((err) => reject(err));
+        });
+      }
+    }
+
+    // ── 3. RATE LIMITING ──
+    if (error.response && error.response.status === 429 && responseData?.isRateLimited) {
+      // Return a clean customized error for the UI components to hook into
+      return Promise.reject({
+        ...error,
+        isRateLimited: true,
+        message: responseData.message
+      });
+    }
+
     return Promise.reject(error);
   }
 );

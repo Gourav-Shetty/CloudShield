@@ -16,6 +16,9 @@ const requestCounts = new Map();
 /** @type {Map<string, Set<string>>} */
 const notFoundCounts = new Map();
 
+/** @type {Map<string, number>} */
+const postCaptchaFailures = new Map();
+
 /* ------------------------------------------------------------------ */
 /*  Periodic cleanup — evict entries older than 60 s every 30 s       */
 /* ------------------------------------------------------------------ */
@@ -101,6 +104,29 @@ function buildFeatureVector(ip) {
  */
 async function createAlert(alertData, io) {
   try {
+    // 1. Run AI analysis first to get the predicted threat class and confidence
+    let classification = null;
+    let threatScore = 0;
+    
+    try {
+      const anomaly = await tryAIAnalysis(alertData.sourceIP, io, alertData);
+      if (anomaly) {
+        classification = anomaly.classification;
+        threatScore = anomaly.threatScore;
+      }
+    } catch (aiErr) {
+      console.warn('[RuleEngine] AI analysis failed, using rule defaults:', aiErr.message);
+    }
+
+    // 2. Attach AI classification details to alert payload if available
+    if (classification) {
+      alertData.details = {
+        ...(alertData.details || {}),
+        aiClassification: classification,
+        aiThreatScore: threatScore,
+      };
+    }
+
     const alert = await Alert.create(alertData);
 
     // Broadcast to all connected dashboard clients
@@ -110,11 +136,8 @@ async function createAlert(alertData, io) {
 
     // Escalate critical alerts to the incident response engine
     if (alertData.severity === 'Critical') {
-      await incidentResponse.handleIncident(alert, io);
+      await incidentResponse.handleIncident(alert, io, classification);
     }
-
-    // Fire-and-forget AI analysis
-    tryAIAnalysis(alertData.sourceIP, io, alertData).catch(() => {});
 
     return alert;
   } catch (err) {
@@ -189,15 +212,19 @@ async function tryAIAnalysis(ip, io, alertData = {}) {
       threatScore: threatScore,
       label: label,
       featureVector: uiFeatures,
+      classification: data.classification || {},
       ip,
     });
 
     if (io) {
       io.emit('anomaly-detected', anomaly);
     }
+
+    return anomaly;
   } catch (err) {
     // AI service may be offline — non-fatal
     console.warn('[RuleEngine] AI analysis unavailable:', err.response?.data || err.message);
+    return null;
   }
 }
 
@@ -225,7 +252,36 @@ async function analyzeLog(logData, io) {
     const recent = loginAttempts.get(ip).filter((a) => a.timestamp > cutoff);
     loginAttempts.set(ip, recent);
 
-    if (recent.length > 5) {
+    // Check if the IP is already under a CAPTCHA quarantine
+    const BlockedIp = require('../models/BlockedIp');
+    const activeBlock = await BlockedIp.findOne({ ip, isActive: true });
+
+    if (activeBlock && activeBlock.restrictionType === 'Captcha') {
+      const failures = (postCaptchaFailures.get(ip) || 0) + 1;
+      postCaptchaFailures.set(ip, failures);
+      console.log(`[RuleEngine] Failed login attempt under CAPTCHA quarantine from ${ip}. Failures: ${failures}/2`);
+
+      if (failures >= 2) {
+        postCaptchaFailures.delete(ip);
+        console.log(`[RuleEngine] Escalating quarantine for ${ip} to hard Block due to repeated failures!`);
+        
+        // Deactivate the CAPTCHA block
+        activeBlock.isActive = false;
+        await activeBlock.save();
+
+        // Create a new CRITICAL alert representing the escalation
+        return createAlert(
+          {
+            severity: 'Critical',
+            attackType: 'BruteForce',
+            sourceIP: ip,
+            description: `Brute-force escalation: repeated failures under CAPTCHA quarantine from ${ip}`,
+            details: { failedAttempts: recent.length, escalated: true, username: payload.username },
+          },
+          io
+        );
+      }
+    } else if (recent.length > 5) {
       return createAlert(
         {
           severity: 'Critical',

@@ -57,16 +57,16 @@ class ThreatDetector:
         predictions = self.model.predict(X)
         n_inliers = int((predictions == 1).sum())
         n_outliers = int((predictions == -1).sum())
-        print("═" * 55)
-        print("  CloudShield AI — Isolation Forest Training Summary")
-        print("═" * 55)
+        print("=" * 55)
+        print("  CloudShield AI - Isolation Forest Training Summary")
+        print("=" * 55)
         print(f"  Samples        : {len(X)}")
         print(f"  Features       : {len(self.feature_columns)}")
         print(f"  Estimators     : {self.model.n_estimators}")
         print(f"  Contamination  : {self.model.contamination}")
         print(f"  Inliers found  : {n_inliers}")
         print(f"  Outliers found : {n_outliers}")
-        print("═" * 55)
+        print("=" * 55)
 
     # ── Prediction ──────────────────────────────────────────────────────
     def predict(self, features_dict: dict) -> dict:

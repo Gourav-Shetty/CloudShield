@@ -12,13 +12,14 @@ CloudShield AI is a distributed cloud security monitoring and response platform 
 +------------------------------------------+
 |          1. ATTACK / AUDIT CLIENT        |
 |             (Kali Linux / VM)            |
+|             (Web Browser Host)           |
 +------------------------------------------+
                      | HTTP Requests
                      v
 +------------------------------------------+
 |         2. APPLICATION BAIT LAYER        |
 |     Employee Portal API (Node.js/Port 3000)|
-|    Employee Portal UI (React/Vite/Port 80) |
+|    Employee Portal UI (React/Vite/Port 5173|
 +------------------------------------------+
                      | Forward Logs (HTTP POST)
                      v
@@ -27,7 +28,7 @@ CloudShield AI is a distributed cloud security monitoring and response platform 
 |     SIEM Platform API (Node.js/Port 5000)  |
 |       Rule Engine -> Alerts Database     |
 |   Incident Response -> SSH Command UFW   |
-|   SOC Dashboard (React/Socket.IO/Port 80)|
+|   SOC Dashboard (React/Socket.IO/Port 5174)
 +------------------------------------------+
           |                        ^
           | HTTP POST /analyze     | JSON Response
@@ -35,22 +36,25 @@ CloudShield AI is a distributed cloud security monitoring and response platform 
 +------------------------------------------+
 |           4. AI MICROSERVICE             |
 |        Flask Service (Python/Port 8000)  |
-|      Isolation Forest Anomaly Classifier |
+|      1. Isolation Forest (Unsupervised)  |
+|      2. Random Forest (Supervised)       |
 +------------------------------------------+
 ```
 
 ### Log Lifecycle Flow:
 1. An incoming HTTP request hits the **Employee Portal** backend.
 2. The `requestLogger` middleware intercepts the request data and response status code.
-3. The Portal sends the log via a fire-and-forget HTTP POST to `/logs` on the **Monitoring Platform**.
+3. The Portal sends the log via an asynchronous, fire-and-forget HTTP POST to `/logs` on the **Monitoring Platform**.
 4. The Monitoring Platform runs the log through:
    - **The Rule Engine:** Scans against regex signatures for known exploits (SQLi, XSS, Path Traversal, Brute Force, Flood).
    - **The AI Service:** Proxies a 7-dimensional feature vector of the IP's recent activity window to the **Flask ML Service**.
-5. The Flask service runs the vector through an unsupervised **Isolation Forest** model, generating a Threat Score (0–100).
-6. If the Rule Engine finds a `Critical` threat OR the AI threat score is `> 80`:
-   - An active **Incident** report is initialized.
-   - The backend establishes an SSH tunnel to the host VM and executes UFW firewall blocking rules: `sudo ufw deny from [ATTACKER_IP]`.
-   - The user account associated with the attacking IP is locked in the portal database.
+5. The Flask service evaluates the vector in parallel:
+   - **Isolation Forest (Unsupervised Model):** Detects zero-day anomalies and unknown traffic profiles, outputting a Threat Score (0–100) mapped to a granular classification band (`Safe`, `Normal`, `Suspicious`, `Warning`, `Malicious`).
+   - **Random Forest Classifier (Supervised Model):** Predicts the specific threat category (`Normal`, `BruteForce`, `SQLInjection`, `XSS`, `DDoS`) along with a confidence probability (e.g. `98% DDoS`).
+6. Based on the predicted threat class, the system enforces **Progressive Containment**:
+   - **RateLimit (DDoS / Flood):** Limits the IP to `2 RPS` (Requests-Per-Second). Requests exceeding this return a `429 Too Many Requests` quarantine block.
+   - **Captcha (BruteForce / Scan):** Challenges state-modifying requests (POST, PUT, DELETE) with a Slide-to-Unlock widget. Legitimate users can unlock access; the account remains unlocked.
+   - **Block (SQLInjection / XSS / Escalations):** Deploys a hard firewall block (`sudo ufw deny`) at the OS-level via SSH and locks the targeted user account database-wide.
 7. Real-time updates (logs, alerts, blocks, and system resource metrics) are broadcast to the dark-themed **SOC Dashboard** via **Socket.IO**.
 
 ---
@@ -63,6 +67,8 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
   * *Response:* Security logs are semi-structured JSON payloads with varying metadata (e.g., payload objects for SQLi might differ from auth payloads). MongoDB's document-based, schemaless nature is ideal for capturing nested JSON records compared to rigid relational SQL schemas. We split the architecture into separate database contexts (`cloudshield_portal` and `cloudshield_monitor`) to mimic a decoupled production environment.
 * **Why Isolation Forest for Anomaly Detection?**
   * *Response:* Security logs contain mostly normal traffic with rare attack patterns. Supervised algorithms (like Random Forests or SVMs) require heavily labeled datasets and struggle with zero-day attacks. Isolation Forest is an unsupervised algorithm that isolates anomalies by randomly partitioning feature paths. Since anomalies require fewer splits to isolate, they appear closer to the root of the trees (shorter path lengths). This allows us to detect brand-new, unseen attack patterns without needing prior labels.
+* **Why the Supervised Random Forest Classifier?**
+  * *Response:* Unsupervised models excel at flagging *when* something is anomalous, but they cannot tell you *what* type of attack it is. We combined the Isolation Forest with a supervised Random Forest Classifier to identify the specific attack type. This enables **Adaptive Prevention**—instead of blocking everything, the system chooses the correct policy matching the exploit (e.g., CAPTCHAs for Brute Force, Rate Limiting for DDoS, and Firewall Bans for Injection attacks).
 * **Why Socket.IO instead of polling?**
   * *Response:* In a Security Operations Center (SOC), a delay of a few seconds can allow an attacker to dump a database or pull sensitive files. Traditional HTTP polling creates unnecessary network overhead and introduces latency. Socket.IO establishes a persistent WebSockets connection, pushing security alerts and live console logs to screen dashboards in milliseconds.
 * **Why Node.js + Python instead of doing everything in Python?**
@@ -75,7 +81,7 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 ### Part 1: Core Architecture & System Flow
 
 #### Q1: What is the main objective of this project?
-**A:** The project demonstrates a closed-loop security system that bridges Layer 7 web application vulnerability detection with automated Layer 3/4 network firewall mitigation, utilizing a hybrid approach of signature-based rules and behavior-based unsupervised machine learning (Isolation Forest).
+**A:** The project demonstrates a closed-loop security system that bridges Layer 7 web application vulnerability detection with automated Layer 3/4 network firewall mitigation, utilizing a hybrid approach of signature-based rules and behavior-based machine learning (Isolation Forest + Random Forest).
 
 #### Q2: What are the target interfaces exposed in the Employee Portal for exploit demonstration?
 **A:** 
@@ -83,7 +89,6 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 2. `/api/employees/search` (SQL Injection target)
 3. `/api/contact` (Stored XSS target)
 4. `/api/download` (Directory Traversal target)
-5. `/api/admin/users` (Hidden route / admin enumeration target)
 
 #### Q3: How do the Employee Portal and Monitoring Platform communicate?
 **A:** The Employee Portal uses an Axios client to post structured log JSON arrays containing the request metadata to the monitoring server asynchronously, preventing logging logic from slowing down user transactions.
@@ -91,12 +96,12 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 #### Q4: Why is there an SSH connection from the monitoring platform to the EC2 server?
 **A:** To automate incident mitigation. When a critical threat is confirmed, the monitoring backend acts as an orchestrator, connecting back to the host operating system via SSH to configure local packet filters (`ufw deny`).
 
-#### Q5: Is the Employee Portal safe to host on the public internet?
-**A:** Only in controlled environments. Since it exposes intentional security vulnerabilities (SQLi, Directory Traversal, stored scripts), it should be protected by source IP access controls (security groups) or run in isolated evaluation environments.
+#### Q5: How does the system handle dual-stack local testing IP mismatches (::1 vs 127.0.0.1)?
+**A:** Node's Express backend normalizes all loopback IP variants (`::1`, `::ffff:127.0.0.1`, and `127.0.0.1`) to `127.0.0.1` at the middleware layer. This ensures that a brute-force block written for `127.0.0.1` cannot be bypassed by an automated script connecting over IPv6.
 
 ---
 
-### Part 2: Security & Firewall Mechanics
+### Part 2: Security & Progressive Containment Mechanics
 
 #### Q6: How does the system prevent an attacker from being blocked permanently?
 **A:** The automated UFW block utilizes a transient database entry. When an IP is blocked, a document is saved with an `unblockAt` timestamp set to 15 minutes in the future. A Node.js timeout triggers an SSH command to execute `sudo ufw delete deny from [IP]` when the duration expires.
@@ -104,21 +109,24 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 #### Q7: What firewall command is executed to block an IP, and how does Nginx behave?
 **A:** The server runs `sudo ufw deny from [IP]`. Once this rule is active at the network level, Nginx will never see subsequent requests from that IP; the packets are dropped by the Linux kernel netfilter framework.
 
-#### Q8: How does UFW differ from standard iptables in your project?
-**A:** UFW (Uncomplicated Firewall) is a user-friendly frontend wrapper for `iptables`. We call UFW commands because they are easier to parse programmatically and update cleanly without breaking system routing tables.
+#### Q8: What is progressive containment and why is it used?
+**A:** Rather than executing destructive blocks for all anomalies, the system adapts its response:
+- DDoS triggers **Rate Limiting** (maintains availability while reducing load).
+- Brute Force triggers a **CAPTCHA** (keeps portal accessible for legitimate operators who make typing errors).
+- Injection attacks trigger a **Hard Firewall Block & Account Lock** (fully locks out high-severity threats).
 
 #### Q9: What happens to a compromised user account during an attack?
-**A:** If a critical authentication alert is triggered, the response engine connects to the `cloudshield_portal` database and locks the targeted user account (`isLocked: true`). This stops the attacker even if they subsequently rotate IPs.
+**A:** If a hard `Block` restriction type is deployed (such as for SQL Injection or a CAPTCHA escalation), the response engine connects to the `cloudshield_portal` database and locks the targeted user account (`isLocked: true`). This prevents the attacker from successfully logging in even if they rotate their IP address.
 
-#### Q10: How does the system prevent the SSH key from being exposed?
-**A:** The SSH private key (`cloudshield-key.pem`) is stored locally on the server filesystem with restricted permissions (`chmod 400`) and the path/contents are managed strictly via system environment variables (`.env`). It is never pushed to public Git repositories.
+#### Q10: How does the progressive CAPTCHA escalation rule work?
+**A:** When brute force is first detected (6 failed logins), the system places the IP in a `Captcha` quarantine. The target user account is **not locked** yet. The user has **2 tries** under the CAPTCHA block. If they solve the slider CAPTCHA but fail the password verification **2 consecutive times**, the system deactivates the CAPTCHA block and escalates to a hard firewall `Block` policy, locking the user account database-wide.
 
 ---
 
 ### Part 3: Signature-Based Rule Engine
 
 #### Q11: How does the Rule Engine detect SQL Injection?
-**A:** It evaluates the request endpoint and stringified request body against a regular expression scanning for SQL SQL keywords and operators: `UNION`, `SELECT`, `OR 1=1`, `--`, etc.
+**A:** It evaluates the request endpoint and stringified request body against a regular expression scanning for SQL keywords and operators: `UNION`, `SELECT`, `OR 1=1`, `--`, etc.
 
 #### Q12: How does the Rule Engine detect XSS?
 **A:** It runs recursive screening on input payload fields matching HTML elements and script handlers: `<script>`, `javascript:`, `onerror`, `onload`.
@@ -129,11 +137,8 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 #### Q14: How does the engine distinguish between standard load and a brute-force authentication event?
 **A:** Brute-force tracking specifically isolates failed authentication attempts (`Login` event, status `>= 400`). Standard traffic spikes are tracked separately under the HTTP Flood rule (>100 total requests per minute).
 
-#### Q15: How are temporary counters cleared in the Rule Engine?
-**A:** The engine runs a cleanup cycle every 30 seconds (`setInterval`) that iterates over in-memory logs and filters out records older than 60 seconds to prevent memory leaks.
-
-#### Q15b: How does the Rule Engine detect Port Scan or Web Application Scanners?
-**A:** It monitors the request headers. If the incoming request has a `User-Agent` string matching common scanning tool signatures (such as `Nmap`, `Nikto`, `sqlmap`, `gobuster`, `dirbuster`), it flags a `PortScan` critical alert and immediately initiates a firewall block.
+#### Q15: How did you prevent the CAPTCHA challenge from double-counting as a brute force failure?
+**A:** The `requestLogger` middleware was updated to inspect the response body. If the response is a CAPTCHA challenge redirect (`captchaRequired: true` returned by the block middleware), the logger suppresses forwarding the event to the SIEM, ensuring only actual user password attempts affect the try counters.
 
 ---
 
@@ -171,8 +176,8 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 #### Q21: What role does WebSockets (Socket.IO) play in the SOC dashboard?
 **A:** Socket.IO pushes live event streams to the browser. When a log is registered, an alert is triggered, or an IP is blocked, the backend emits the event directly to all open dashboards in real-time.
 
-#### Q22: What happens if the Socket.IO server goes offline?
-**A:** The dashboard uses Socket.IO client-side auto-reconnection logic. It displays a "Disconnected" indicator in the navigation header and periodically attempts to reconnect.
+#### Q22: How does the CAPTCHA verify request bypass the security block?
+**A:** Since the client IP is blocked under a `Captcha` quarantine, any standard write action (POST) is intercepted and returns `403 captchaRequired`. We explicitly excluded `/api/auth/verify-captcha` from this block in `checkIpBlock.js` to prevent a catch-22, allowing clients to submit and verify their slider offset.
 
 #### Q23: How does the Blocked IPs page maintain the remaining block time?
 **A:** The server sends the absolute ISO timestamp for `unblockAt`. The React frontend runs a localized `setInterval` timer (every 1 second) that calculates the difference between `unblockAt` and the local clock.
@@ -209,14 +214,14 @@ Examiners frequently ask **"Why did you use X instead of Y?"**. Use these bullet
 Use this step-by-step plan to guide the examiner through a flawless live demo:
 
 ### Phase 1: Platform Walkthrough (3 Minutes)
-1. **Show the bait:** Open `http://[EC2-IP]/` in your browser. Show the blue, clean "CloudShield Corp" Employee Portal. Log in using user: `admin`, password: `admin123`.
+1. **Show the bait:** Open `http://localhost:5173/` in your browser. Show the blue, clean "CloudShield Corp" Employee Portal. Log in using user: `admin`, password: `admin123`.
 2. **Expose records:** Navigate to the Employees page, show the database records, search filters, and leave request tabs.
-3. **Open the SOC:** Open `http://[EC2-IP]/dashboard/` in a split window. Show the dark-themed Security Dashboard. Log in using `admin` / `cloudshield123`.
+3. **Open the SOC:** Open `http://localhost:5174/` in a split window. Show the dark-themed Security Dashboard. Log in using `admin` / `cloudshield123`.
 4. **Point out elements:** Show the live threat gauge (resting at green/Safe), the system status indicator (all services green/running), and the empty Blocked IPs table.
 
 ### Phase 2: Simulating Application Exploit Checks (4 Minutes)
 1. **Directory Traversal Verification:**
-   - In your browser or curl, access: `http://[EC2-IP]/api/download?file=../../../../etc/passwd`
+   - In your browser or curl, access: `http://localhost:3000/api/download?file=../../../../etc/passwd`
    - Immediately point to the SOC dashboard.
    - **Result:** A red glow flashes. A `DirectoryTraversal` alert with `High` severity appears in the live feed.
 2. **Stored XSS Verification:**
@@ -225,15 +230,12 @@ Use this step-by-step plan to guide the examiner through a flawless live demo:
    - **Result:** An `XSS` alert appears on the dashboard. The raw string is safely rendered as text by the dashboard UI.
 
 ### Phase 3: Live Automated Block Demonstration (5 Minutes)
-1. **Brute Force Verification:**
-   - Run a Hydra login audit check from your Kali Linux terminal.
-   - Show the live logs terminal on the SOC dashboard scroll rapidly.
-   - **Result:** A `BruteForce` critical alert triggers.
-   - **Firewall Action:** Point out the countdown banner that instantly appears on the Blocked IPs page.
-   - Show the Kali terminal hang. Attempt to load the portal from the Kali machine; it will time out.
-2. **Local Firewall Audit:**
-   - SSH into the EC2 instance from a safe IP. Run: `sudo ufw status`.
-   - **Result:** Show the examiner the rule: `Anywhere DENY [Kali_IP]`.
+1. **Progressive CAPTCHA and Escalation verification:**
+   - On the Employee Portal login screen (`http://localhost:5173/login`), submit a wrong password 6 times consecutively.
+   - **Result:** The SIEM flags a BruteForce attack, deploys a `Captcha` quarantine. Try logging in again ➔ **Slide-to-Unlock challenge overlays**.
+   - **Solve the CAPTCHA**: Slide to unlock. Enter a wrong password again (Try 1/2) ➔ Slide to unlock displays again.
+   - **Escalate the Attack**: Slide to unlock a second time, and enter another wrong password (Try 2/2) ➔ The system escalates, deactivates the CAPTCHA block, and deploys a hard VM `Block` policy, locking the `admin` account database-wide.
+   - Try logging in again ➔ Your IP is blocked and redirected displaying: `Access Denied...`.
 
 ### Phase 4: AI & Anomaly Vector Checks (3 Minutes)
 1. **Radar Vector Inspection:**
@@ -242,4 +244,4 @@ Use this step-by-step plan to guide the examiner through a flawless live demo:
 2. **Manual Feature Validation:**
    - Use the slider controls to input anomalous features manually (e.g., failed logins = 20, error rate = 85%).
    - Click **Run Anomaly Audit**.
-   - **Result:** Show the Threat Score jump into the warning zone (>80), displaying the classification of `Malicious`.
+   - **Result:** Show the Threat Score jump into the warning zone, displaying the classification of `Malicious` or `Warning`. Show the descriptive labels like `Suspicious` or `Warning` rendering dynamically in the audit logs.

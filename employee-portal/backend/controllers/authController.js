@@ -3,6 +3,17 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { sendLog } = require('../config/logClient');
 
+const getClientIp = (req) => {
+  let ip = req.headers['x-forwarded-for'] || req.ip || req.connection?.remoteAddress || '';
+  if (ip === '::1' || ip === '::ffff:127.0.0.1' || ip === '127.0.0.1') {
+    return '127.0.0.1';
+  }
+  if (ip.startsWith('::ffff:')) {
+    return ip.substring(7);
+  }
+  return ip;
+};
+
 /**
  * @desc    Register a new user
  * @route   POST /api/auth/register
@@ -42,7 +53,7 @@ const register = async (req, res) => {
 
     // Log the registration event
     sendLog({
-      ip: req.headers['x-forwarded-for'] || req.ip,
+      ip: getClientIp(req),
       method: req.method,
       endpoint: req.originalUrl,
       status: 201,
@@ -93,7 +104,7 @@ const login = async (req, res) => {
 
     if (!user) {
       sendLog({
-        ip: req.headers['x-forwarded-for'] || req.ip,
+        ip: getClientIp(req),
         method: req.method,
         endpoint: req.originalUrl,
         status: 401,
@@ -111,7 +122,7 @@ const login = async (req, res) => {
     // Check if account is locked
     if (user.isLocked) {
       sendLog({
-        ip: req.headers['x-forwarded-for'] || req.ip,
+        ip: getClientIp(req),
         method: req.method,
         endpoint: req.originalUrl,
         status: 403,
@@ -131,7 +142,7 @@ const login = async (req, res) => {
 
     if (!isMatch) {
       sendLog({
-        ip: req.headers['x-forwarded-for'] || req.ip,
+        ip: getClientIp(req),
         method: req.method,
         endpoint: req.originalUrl,
         status: 401,
@@ -147,7 +158,7 @@ const login = async (req, res) => {
     }
 
     // Save login IP to user record
-    user.lastLoginIP = req.headers['x-forwarded-for'] || req.ip || '';
+    user.lastLoginIP = getClientIp(req);
     await user.save();
 
     // Generate JWT
@@ -158,7 +169,7 @@ const login = async (req, res) => {
     );
 
     sendLog({
-      ip: req.headers['x-forwarded-for'] || req.ip,
+      ip: getClientIp(req),
       method: req.method,
       endpoint: req.originalUrl,
       status: 200,

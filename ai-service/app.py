@@ -13,7 +13,8 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from model.isolation_forest import ThreatDetector
-from routes.analyze import analyze_bp, init_detector
+from model.classifier import ThreatClassifier
+from routes.analyze import analyze_bp, init_models
 
 
 def create_app() -> Flask:
@@ -22,9 +23,10 @@ def create_app() -> Flask:
     CORS(app)  # allow all origins
 
     # ── Train model ─────────────────────────────────────────────────────
-    print("\n🚀 Initializing CloudShield AI threat-detection model …\n")
+    print("\n[AI] Initializing CloudShield AI threat-detection models...\n")
     detector = ThreatDetector()
-    init_detector(detector)
+    classifier = ThreatClassifier()
+    init_models(detector, classifier)
 
     # ── Register blueprints ─────────────────────────────────────────────
     app.register_blueprint(analyze_bp)
