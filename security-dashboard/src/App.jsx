@@ -9,7 +9,6 @@ import Overview from './pages/Overview';
 import LiveLogs from './pages/LiveLogs';
 import Alerts from './pages/Alerts';
 import Incidents from './pages/Incidents';
-import AIDetection from './pages/AIDetection';
 import BlockedIPs from './pages/BlockedIPs';
 import Reports from './pages/Reports';
 
@@ -60,7 +59,6 @@ function App() {
             <Route path="live-logs" element={<LiveLogs />} />
             <Route path="alerts" element={<Alerts />} />
             <Route path="incidents" element={<Incidents />} />
-            <Route path="ai-detection" element={<AIDetection />} />
             <Route path="blocked-ips" element={<BlockedIPs />} />
             <Route path="reports" element={<Reports />} />
           </Route>

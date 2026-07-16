@@ -37,7 +37,6 @@ const navGroups = [
   {
     label: 'INTELLIGENCE',
     items: [
-      { name: 'AI Detection', path: '/ai-detection', icon: FiCpu      },
       { name: 'Reports',      path: '/reports',      icon: FiFileText },
     ],
   },

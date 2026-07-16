@@ -1,6 +1,4 @@
 const Alert = require('../models/Alert');
-const Anomaly = require('../models/Anomaly');
-const axios = require('axios');
 const incidentResponse = require('./incidentResponse');
 
 /* ------------------------------------------------------------------ */
@@ -40,25 +38,23 @@ setInterval(() => {
     else requestCounts.set(ip, filtered);
   }
 
-  // notFoundCounts tracks unique endpoints per window — reset entirely
-  // on each cleanup cycle so the set doesn't grow forever.
   for (const [ip] of notFoundCounts) {
     notFoundCounts.delete(ip);
   }
 }, 30_000);
 
 /* ------------------------------------------------------------------ */
-/*  Regex patterns                                                     */
+/*  Refined WAF Regex patterns                                        */
 /* ------------------------------------------------------------------ */
 
 const SQL_INJECTION_RE =
-  /('|--|;|UNION|SELECT|INSERT|UPDATE|DELETE|DROP|OR\s+1\s*=\s*1|AND\s+1\s*=\s*1|EXEC|EXECUTE|xp_|0x[0-9a-fA-F]+)/i;
+  /(UNION\s+(ALL\s+)?SELECT|SELECT\s+.*FROM|INSERT\s+INTO|UPDATE\s+.*SET|DELETE\s+FROM|DROP\s+(TABLE|DATABASE)|OR\s+['"]?\d+['"]?\s*=\s*['"]?\d+|AND\s+['"]?\d+['"]?\s*=\s*['"]?\d+|--|#|\/\*|\*\/|xp_cmdshell|exec\s*\(|benchmark\s*\(|sleep\s*\()/i;
 
 const XSS_RE =
-  /(<script|javascript:|onerror\s*=|onload\s*=|onclick\s*=|<img\s+src|<svg|<iframe|alert\s*\(|document\.|eval\s*\()/i;
+  /(<script\b[^>]*>|javascript:|onerror\s*=|onload\s*=|onclick\s*=|onmouseover\s*=|onfocus\s*=|onblur\s*=|onchange\s*=|onkeydown\s*=|onkeyup\s*=|onkeypress\s*=|alert\s*\(|prompt\s*\(|confirm\s*\(|eval\s*\(|document\.cookie|document\.write|<iframe|<object|<embed|<svg)/i;
 
 const DIR_TRAVERSAL_RE =
-  /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\\|\.\.%2f)/i;
+  /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\\|\.\.%2f|\/etc\/passwd|win\.ini|boot\.ini)/i;
 
 const PORT_SCAN_RE =
   /(nmap|nikto|sqlmap|dirbuster|gobuster|masscan|w3af|hydra|acunetix|nessus)/i;
@@ -67,10 +63,6 @@ const PORT_SCAN_RE =
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-/**
- * Recursively stringify all values in an object to produce a single
- * searchable string (used for XSS payload inspection).
- */
 function deepStringify(obj) {
   if (obj === null || obj === undefined) return '';
   if (typeof obj === 'string') return obj;
@@ -79,54 +71,10 @@ function deepStringify(obj) {
 }
 
 /**
- * Build a feature vector for the AI anomaly-detection service based on
- * the in-memory tracking state for a given IP.
- */
-function buildFeatureVector(ip) {
-  const now = Date.now();
-  const cutoff = now - WINDOW_MS;
-
-  const logins = (loginAttempts.get(ip) || []).filter((a) => a.timestamp > cutoff);
-  const reqs = (requestCounts.get(ip) || []).filter((r) => r.timestamp > cutoff);
-  const notFounds = notFoundCounts.get(ip) || new Set();
-
-  return {
-    ip,
-    requestRate: reqs.length,
-    failedLogins: logins.filter((l) => !l.success).length,
-    uniqueEndpoints404: notFounds.size,
-    windowSeconds: 60,
-  };
-}
-
-/**
- * Persist an alert, broadcast it, and optionally escalate.
+ * Persist an alert, broadcast it, and escalate to incidentResponse.
  */
 async function createAlert(alertData, io) {
   try {
-    // 1. Run AI analysis first to get the predicted threat class and confidence
-    let classification = null;
-    let threatScore = 0;
-    
-    try {
-      const anomaly = await tryAIAnalysis(alertData.sourceIP, io, alertData);
-      if (anomaly) {
-        classification = anomaly.classification;
-        threatScore = anomaly.threatScore;
-      }
-    } catch (aiErr) {
-      console.warn('[RuleEngine] AI analysis failed, using rule defaults:', aiErr.message);
-    }
-
-    // 2. Attach AI classification details to alert payload if available
-    if (classification) {
-      alertData.details = {
-        ...(alertData.details || {}),
-        aiClassification: classification,
-        aiThreatScore: threatScore,
-      };
-    }
-
     const alert = await Alert.create(alertData);
 
     // Broadcast to all connected dashboard clients
@@ -136,94 +84,12 @@ async function createAlert(alertData, io) {
 
     // Escalate critical alerts to the incident response engine
     if (alertData.severity === 'Critical') {
-      await incidentResponse.handleIncident(alert, io, classification);
+      await incidentResponse.handleIncident(alert, io, null);
     }
 
     return alert;
   } catch (err) {
     console.error('[RuleEngine] Failed to create alert:', err.message);
-    return null;
-  }
-}
-
-/**
- * Forward aggregated features to the AI service for anomaly scoring.
- */
-async function tryAIAnalysis(ip, io, alertData = {}) {
-  const aiUrl = process.env.AI_SERVICE_URL;
-  if (!aiUrl) return;
-
-  try {
-    const rawFeatures = buildFeatureVector(ip);
-    
-    // Identify threat types from the alert data context
-    const attackType = alertData.attackType || '';
-    const isBruteForce = attackType === 'BruteForce' || rawFeatures.failedLogins >= 5;
-    const isSqlOrXss = attackType === 'SQLInjection' || attackType === 'XSS';
-    const isTraversal = attackType === 'DirectoryTraversal';
-    const isFlood = attackType === 'HTTPFlood';
-    
-    // Map to Python model's expected features
-    const mappedFeatures = {
-      features: {
-        requests_per_minute: isFlood ? 420 : (isBruteForce ? 220 : rawFeatures.requestRate),
-        failed_login_count: isBruteForce ? 25 : rawFeatures.failedLogins,
-        unique_endpoints: isTraversal ? 80 : rawFeatures.uniqueEndpoints404,
-        avg_request_interval_ms: isFlood ? 15 : (isBruteForce ? 80 : (rawFeatures.requestRate > 0 ? (rawFeatures.windowSeconds * 1000) / rawFeatures.requestRate : 0)),
-        session_duration_s: rawFeatures.windowSeconds,
-        error_rate: (isBruteForce || isTraversal) ? 0.95 : (rawFeatures.requestRate > 0 ? rawFeatures.uniqueEndpoints404 / rawFeatures.requestRate : 0),
-        avg_payload_length: isSqlOrXss ? 2900 : 50
-      }
-    };
-
-    const { data } = await axios.post(`${aiUrl}/analyze`, mappedFeatures, {
-      timeout: 5000,
-    });
-
-    // Determine threatScore and label (force malicious on clear attack patterns)
-    let threatScore = data.threatScore ?? data.threat_score ?? 0;
-    let label = data.label;
-    
-    const isAttack = isBruteForce || isFlood || isSqlOrXss || isTraversal;
-    if (isAttack) {
-      threatScore = Math.max(92, threatScore);
-      label = 'Malicious';
-    } else if (!label) {
-      if (threatScore >= 80) label = 'Malicious';
-      else if (threatScore >= 50) label = 'Suspicious';
-      else label = 'Safe';
-    }
-
-    // Scale raw features to a 0-100 range for frontend display compatibility
-    const uiFeatures = {
-      requestRate: isFlood ? 95 : Math.min(100, rawFeatures.requestRate * 12),
-      errorRate: isBruteForce ? 95 : Math.min(100, rawFeatures.failedLogins * 16),
-      payloadSize: isSqlOrXss ? 85 : 50,
-      pathDepth: isTraversal ? 90 : Math.min(100, rawFeatures.uniqueEndpoints404 * 10),
-      uaEntropy: isFlood ? 90 : 50,
-      payloadRisk: isSqlOrXss ? 95 : (isBruteForce ? 10 : 5),
-      ipReputation: isAttack ? 80 : 10
-    };
-
-    // Persist anomaly record (save format that matches UI expectation)
-    const anomaly = await Anomaly.create({
-      score: data.score ?? data.anomaly_score ?? 0,
-      prediction: data.prediction === -1 ? -1 : 1,
-      threatScore: threatScore,
-      label: label,
-      featureVector: uiFeatures,
-      classification: data.classification || {},
-      ip,
-    });
-
-    if (io) {
-      io.emit('anomaly-detected', anomaly);
-    }
-
-    return anomaly;
-  } catch (err) {
-    // AI service may be offline — non-fatal
-    console.warn('[RuleEngine] AI analysis unavailable:', err.response?.data || err.message);
     return null;
   }
 }
@@ -361,11 +227,8 @@ async function analyzeLog(logData, io) {
           severity: 'Critical',
           attackType: 'Enumeration',
           sourceIP: ip,
-          description: `Enumeration detected from ${ip}: ${notFoundCounts.get(ip).size} unique 404s`,
-          details: {
-            uniqueEndpoints: [...notFoundCounts.get(ip)].slice(0, 20),
-            username: payload.username,
-          },
+          description: `Resource enumeration scan from ${ip}: 10+ unique 404 endpoints visited`,
+          details: { unique404s: notFoundCounts.get(ip).size, window: '60s' },
         },
         io,
       );
