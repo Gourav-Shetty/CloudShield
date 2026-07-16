@@ -16,6 +16,12 @@ const requestLogger = (req, res, next) => {
   const originalSend = res.send.bind(res);
 
   const logAndForward = (originalMethod, body) => {
+    // Prevent double logging when res.json calls res.send internally
+    if (res._logged) {
+      return originalMethod(body);
+    }
+    res._logged = true;
+
     // Exclude CAPTCHA challenges from being logged to prevent double-counting
     let parsedBody = {};
     try {

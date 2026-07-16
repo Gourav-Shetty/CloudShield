@@ -72,8 +72,13 @@ const Alerts = () => {
       setLoading(true);
       try {
         const response = await api.get('/alerts');
-        const raw = response.data?.alerts || response.data;
-        if (raw && Array.isArray(raw) && raw.length > 0) {
+        const raw = Array.isArray(response.data?.alerts)
+          ? response.data.alerts
+          : Array.isArray(response.data)
+          ? response.data
+          : null;
+
+        if (raw !== null) {
           setAlerts(raw.map(a => ({
             id:          a._id || a.id,
             timestamp:   new Date(a.createdAt || a.timestamp),

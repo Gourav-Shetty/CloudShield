@@ -99,8 +99,13 @@ const Incidents = () => {
       setLoading(true);
       try {
         const response = await api.get('/incidents');
-        const raw = response.data?.incidents || response.data;
-        if (raw && Array.isArray(raw) && raw.length > 0) {
+        const raw = Array.isArray(response.data?.incidents)
+          ? response.data.incidents
+          : Array.isArray(response.data)
+          ? response.data
+          : null;
+
+        if (raw !== null) {
           setIncidents(raw.map(inc => ({
             id: inc.incidentId || inc._id,
             status: (inc.status || 'Open').toLowerCase(),

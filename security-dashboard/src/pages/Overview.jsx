@@ -73,20 +73,14 @@ const SeverityBadge = ({ severity }) => {
 const Overview = () => {
   const { socket } = useSocket();
   const [stats, setStats] = useState({
-    totalLogs: 154820,
-    activeAlerts: 14,
-    openIncidents: 3,
-    blockedIps: 87,
-    threatScore: 42,
+    totalLogs: 0,
+    activeAlerts: 0,
+    openIncidents: 0,
+    blockedIps: 0,
+    threatScore: 0,
   });
 
-  const [recentAlerts, setRecentAlerts] = useState([
-    { id: '1', timestamp: new Date(Date.now() - 45000),   severity: 'critical', attackType: 'SQL Injection', sourceIp: '198.51.100.42',  description: 'SQL injection detected on login endpoint' },
-    { id: '2', timestamp: new Date(Date.now() - 180000),  severity: 'high',     attackType: 'DDoS Attempt',  sourceIp: '203.0.113.110',   description: 'High traffic anomaly - 1200 req/sec' },
-    { id: '3', timestamp: new Date(Date.now() - 600000),  severity: 'medium',   attackType: 'Brute Force',   sourceIp: '192.0.2.75',      description: 'Repeated failed login attempts for admin' },
-    { id: '4', timestamp: new Date(Date.now() - 900000),  severity: 'low',      attackType: 'Port Scan',     sourceIp: '198.51.100.19',   description: 'Reconnaissance scan detected on port 8080' },
-    { id: '5', timestamp: new Date(Date.now() - 1200000), severity: 'medium',   attackType: 'XSS Attempt',   sourceIp: '203.0.113.5',     description: 'Reflected XSS script in search query' },
-  ]);
+  const [recentAlerts, setRecentAlerts] = useState([]);
 
   const [trafficData, setTrafficData] = useState(() => {
     const data = [];
@@ -94,20 +88,14 @@ const Overview = () => {
     for (let i = 59; i >= 0; i--) {
       data.push({
         time: new Date(now - i * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        requests: Math.floor(Math.random() * 150) + 100,
-        alerts: Math.random() > 0.85 ? Math.floor(Math.random() * 3) + 1 : 0,
+        requests: 0,
+        alerts: 0,
       });
     }
     return data;
   });
 
-  const [attackBreakdown, setAttackBreakdown] = useState([
-    { name: 'SQL Injection',  value: 35 },
-    { name: 'DDoS Attack',    value: 25 },
-    { name: 'Brute Force',    value: 20 },
-    { name: 'XSS Attack',     value: 12 },
-    { name: 'Path Traversal', value: 8  },
-  ]);
+  const [attackBreakdown, setAttackBreakdown] = useState([]);
 
   const COLORS = ['#ff3366', '#00d4ff', '#ffaa00', '#a855f7', '#00ff88'];
 
@@ -117,15 +105,15 @@ const Overview = () => {
       try {
         const response = await api.get('/dashboard');
         if (response.data) {
-          setStats(prev => ({
-            totalLogs:      response.data.totalLogs      || prev.totalLogs,
-            activeAlerts:   response.data.activeAlerts   !== undefined ? response.data.activeAlerts   : prev.activeAlerts,
-            openIncidents:  response.data.openIncidents  !== undefined ? response.data.openIncidents  : prev.openIncidents,
-            blockedIps:     response.data.blockedIPs     !== undefined ? response.data.blockedIPs     : prev.blockedIps,
-            threatScore:    response.data.threatScore    !== undefined ? response.data.threatScore    : prev.threatScore,
-          }));
+          setStats({
+            totalLogs:      response.data.totalLogs      || 0,
+            activeAlerts:   response.data.activeAlerts   || 0,
+            openIncidents:  response.data.openIncidents  || 0,
+            blockedIps:     response.data.blockedIPs     || 0,
+            threatScore:    response.data.threatScore    || 0,
+          });
 
-          if (response.data.recentAlerts?.length > 0) {
+          if (Array.isArray(response.data.recentAlerts)) {
             setRecentAlerts(response.data.recentAlerts.slice(0, 5).map(a => ({
               id: a._id || a.id,
               timestamp:  new Date(a.createdAt || a.timestamp),
@@ -134,18 +122,22 @@ const Overview = () => {
               sourceIp:   a.sourceIP || a.sourceIp || 'unknown',
               description: a.description || '',
             })));
+          } else {
+            setRecentAlerts([]);
           }
 
-          if (response.data.threatDistribution?.length > 0) {
+          if (Array.isArray(response.data.threatDistribution) && response.data.threatDistribution.length > 0) {
             const totalAlerts = response.data.threatDistribution.reduce((acc, d) => acc + d.count, 0) || 1;
             setAttackBreakdown(response.data.threatDistribution.map(d => {
               const nameMap = { SQLInjection: 'SQL Injection', HTTPFlood: 'DDoS Attack', BruteForce: 'Brute Force', XSS: 'XSS Attack', DirectoryTraversal: 'Path Traversal', PortScan: 'Port Scan' };
               return { name: nameMap[d._id] || d._id, value: Math.round((d.count / totalAlerts) * 100) };
             }));
+          } else {
+            setAttackBreakdown([]);
           }
         }
       } catch {
-        console.warn('Could not fetch stats from backend. Using mock data.');
+        console.warn('Could not fetch stats from backend.');
       }
     };
     fetchDashboardStats();
@@ -166,17 +158,18 @@ const Overview = () => {
     });
 
     socket.on('new-alert', (alert) => {
+      const severityLower = (alert.severity || 'medium').toLowerCase();
       setStats(prev => ({
         ...prev,
         activeAlerts: prev.activeAlerts + 1,
-        threatScore: Math.min(100, prev.threatScore + (alert.severity === 'critical' ? 10 : alert.severity === 'high' ? 6 : 3)),
+        threatScore: Math.min(100, prev.threatScore + (severityLower === 'critical' ? 10 : severityLower === 'high' ? 6 : 3)),
       }));
       setRecentAlerts(prev => [{
-        id: alert.id || String(Date.now()),
-        timestamp:   alert.timestamp ? new Date(alert.timestamp) : new Date(),
-        severity:    alert.severity || 'medium',
+        id:          alert._id || alert.id || String(Date.now() + Math.random()),
+        timestamp:   new Date(alert.createdAt || alert.timestamp || Date.now()),
+        severity:    severityLower,
         attackType:  alert.attackType || 'Anomaly',
-        sourceIp:    alert.sourceIp || alert.ip || 'Unknown',
+        sourceIp:    alert.sourceIP || alert.sourceIp || 'unknown',
         description: alert.description || 'Intrusion behavior flagged by security policy',
       }, ...prev.slice(0, 4)]);
       setTrafficData(prev => {

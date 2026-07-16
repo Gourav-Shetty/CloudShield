@@ -84,8 +84,13 @@ const Reports = () => {
       setLoading(true);
       try {
         const response = await api.get('/reports');
-        const raw = response.data?.reports || response.data;
-        if (raw && Array.isArray(raw) && raw.length > 0) {
+        const raw = Array.isArray(response.data?.reports)
+          ? response.data.reports
+          : Array.isArray(response.data)
+          ? response.data
+          : null;
+
+        if (raw !== null) {
           setReports(raw.map(r => ({
             id: r.reportId || r._id || r.id,
             ip: r.ipAddress || r.ip || 'unknown',
@@ -103,7 +108,7 @@ const Reports = () => {
           setReports(generateMockReports());
         }
       } catch (err) {
-        console.warn('API reports index failed. Seeding reports repository locally.');
+        console.warn('Could not query security reports from database. Seeding mock reports.');
         setReports(generateMockReports());
       } finally {
         setLoading(false);
