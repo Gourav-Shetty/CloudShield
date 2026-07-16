@@ -396,7 +396,7 @@ async function lockUserAccount(ip) {
       useUnifiedTopology: true,
     }).asPromise();
 
-    const UserModel = portalConn.model(
+    const UserModel = portalConn.models.User || portalConn.model(
       'User',
       new mongoose.Schema({
         isLocked: Boolean,

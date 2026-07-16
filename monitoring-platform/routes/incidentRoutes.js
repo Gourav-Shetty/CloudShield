@@ -176,7 +176,7 @@ router.post('/unlock-account', auth, async (req, res) => {
         useUnifiedTopology: true,
       }).asPromise();
 
-      const UserModel = portalConn.model(
+      const UserModel = portalConn.models.UserUnlock || portalConn.model(
         'UserUnlock',
         new mongoose.Schema({ isLocked: Boolean, lastLoginIP: String, username: String }),
         'users',

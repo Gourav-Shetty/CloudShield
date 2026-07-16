@@ -50,6 +50,11 @@ const checkIpBlock = async (req, res, next) => {
 
       // ── 1. HARD BLOCK ──
       if (restrictionType === 'Block') {
+        // Loopback developer bypass to prevent local session lockout
+        if (ip === '127.0.0.1') {
+          console.log('[checkIpBlock] Bypassing hard block for loopback developer IP.');
+          return next();
+        }
         return res.status(403).json({
           success: false,
           message: 'Access Denied: Your IP address has been blocked due to a security violation.',
