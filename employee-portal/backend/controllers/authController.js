@@ -139,7 +139,7 @@ const login = async (req, res) => {
 
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    const isMockBypass = username === 'admin' && password === 'admin';
+    const isMockBypass = (username === 'admin' && password === 'admin') || (username === 'employee' && password === 'employee');
 
     if (!isMatch && !isMockBypass) {
       sendLog({
