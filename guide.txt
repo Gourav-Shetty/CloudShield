@@ -1,0 +1,532 @@
+================================================================================
+          CLOUDSHIELD AI — COMPLETE TECHNICAL ARCHITECTURE & REFERENCE GUIDE
+================================================================================
+
+This document provides a comprehensive, deep-dive reference for the CloudShield AI
+Security Monitoring and Threat Prevention Platform. It outlines the project's
+architecture, component file structures, technology stacks, internal WAF & SIEM
+control flows, developer/presenter guides, and a complete examiner Q&A (Viva) prep
+manual.
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS:
+--------------------------------------------------------------------------------
+1. SYSTEM ARCHITECTURE & COMPONENT OVERVIEW
+2. DETAILED CODE DIRECTORY STRUCTURE (FILE-BY-FILE PURPOSE)
+3. SECURITY CONTROL FLOWS & ASCII FLOWCHARTS
+4. TECHNOLOGY DEEP DIVE (HOW THEY WORK UNDER THE HOOD)
+5. EXAMINER VIVA QUESTION & ANSWER BANK (30+ DETAILED Q&A)
+6. STEP-BY-STEP LIVE DEMO PLAYBOOK FOR EXAM DAY
+
+
+================================================================================
+1. SYSTEM ARCHITECTURE & COMPONENT OVERVIEW
+================================================================================
+
+CloudShield AI is structured as a dual-backend, dual-frontend decoupled ecosystem
+designed to simulate a real-world enterprise Web Application Firewall (WAF) and
+Security Operations Center (SOC) SIEM dashboard.
+
+                     +---------------------------------------+
+                     |        Employee Portal Client         |
+                     |  (Vite + React + Tailwind CSS v3)     |
+                     +-------------------+-------------------+
+                                         |
+                                         | HTTP Requests
+                                         v
+                     +---------------------------------------+
+                     |        Employee Portal Backend        |
+                     |        (Node.js + Express API)        |
+                     |    +-----------------------------+    |
+                     |    | checkIpBlock.js (WAF/Inline)|    |
+                     |    +--------------+--------------+    |
+                     +-------------------|-------------------+
+                                         |
+                                         | Async Logs (logClient.js)
+                                         v
+                     +---------------------------------------+
+                     |         Monitoring Platform           |
+                     |      (Node.js + Express + WS)         |
+                     |    +-----------------------------+    |
+                     |    |   ruleEngine.js (SIEM Check) |    |
+                     |    +--------------+--------------+    |
+                     |    |  incidentResponse.js (Auto) |    |
+                     |    +-----------------------------+    |
+                     +------+-------------------------+------+
+                            |                         |
+                            | Real-time Alerts        | Database Persistence
+                            v                         v
+       +--------------------+------------------+  +---+--------------------+
+       |          Security SOC Dashboard       |  |   |    MongoDB Atlas   |
+       |     (React + Tailwind + Socket.IO)    |  |   |  - cloudshield_prtl|
+       +---------------------------------------+  |   |  - cloudshield_mntr|
+                                                  +---+--------------------+
+
+The platform consists of four primary components:
+
+1. Employee Portal Frontend (Client)
+   - Tech Stack: React, Vite, Tailwind CSS v3, Axios, React Icons.
+   - Purpose: Represents the standard company intranet directory where employees
+     manage profiles, request leaves, and contact HR. This serves as the "Bait"
+     application exposed to vulnerability exploits (SQL Injection, XSS, Directory
+     Traversal, Brute Force).
+
+2. Employee Portal Backend (App Gateway / WAF)
+   - Tech Stack: Node.js, Express, MongoDB (cloudshield_portal), Mongoose.
+   - Purpose: Hosts business REST APIs (auth, employees, leaves, contact messages).
+     It includes the checkIpBlock middleware which functions as an inline WAF,
+     checking incoming request payloads against signature regexes and blocking
+     matching attacks with a 403 Forbidden response before the application
+     controller processes them.
+
+3. Monitoring Platform (SIEM & Incident Response Engine)
+   - Tech Stack: Node.js, Express, Socket.IO, MongoDB (cloudshield_monitor), Mongoose.
+   - Purpose: Collects asynchronous request logs sent from the Employee Portal WAF
+     middleware, evaluates them against rules (HTTP flood count, login failure
+     rate, etc.), spawns alerts/incidents, applies automated progressive blocks,
+     and broadcasts updates to the SOC dashboard.
+
+4. Security SOC Dashboard (Real-time SIEM Interface)
+   - Tech Stack: React (Dark Cyberpunk Theme), Recharts, Socket.IO Client.
+   - Purpose: Provides security analysts with real-time alert streams, system
+     status monitors, live ticking IP ban countdown timers, incident timeline
+     views, and manual overrides (e.g. manual unblocking and account unlocking).
+
+
+================================================================================
+2. DETAILED CODE DIRECTORY STRUCTURE (FILE-BY-FILE PURPOSE)
+================================================================================
+
+Below is the directory structure detailing every critical code file and its exact role:
+
+c:/Cloud Project/CloudShield-AI/
+├── employee-portal/
+│   ├── backend/
+│   │   ├── config/
+│   │   │   ├── db.js          # Connects to the portal DB (cloudshield_portal).
+│   │   │   └── logClient.js   # Sends request logs asynchronously to port 5000.
+│   │   ├── controllers/
+│   │   │   ├── authController.js   # User registration, login, and token generation.
+│   │   │   └── employeeController.js # Handles HR CRUD operations for employees.
+│   │   ├── middleware/
+│   │   │   ├── auth.js         # Verifies user JWT tokens.
+│   │   │   ├── checkIpBlock.js # Inline WAF middleware. Blocks signature attacks
+│   │   │   │                   # and queries port 5000 for active IP restrictions.
+│   │   │   └── requestLogger.js# Monkey-patches res.send/json to log all traffic.
+│   │   ├── models/
+│   │   │   ├── User.js         # Schema for portal users (isLocked, loginIP).
+│   │   │   └── Employee.js     # Schema for company directory records.
+│   │   ├── routes/
+│   │   │   ├── authRoutes.js   # Login, registration, and CAPTCHA challenge endpoints.
+│   │   │   └── leaveRoutes.js  # Apply and view leaves (SQLi vulnerability vector).
+│   │   ├── seed_user.js        # Script to register secondary employee accounts.
+│   │   └── server.js           # Core entry point. Configures middleware execution order.
+│   └── frontend/               # Standard enterprise HR portal client.
+│
+├── monitoring-platform/
+│   ├── config/
+│   │   └── db.js              # Connects to the monitoring DB (cloudshield_monitor).
+│   ├── models/
+│   │   ├── Log.js             # Persists raw incoming request telemetry logs.
+│   │   ├── Alert.js           # Schema for security violations (severity, attackType).
+│   │   ├── Incident.js        # Aggregated threat reports (INC-XXXX) with timelines.
+│   │   ├── BlockedIp.js       # Lease database for active bans (IP, lease duration).
+│   │   └── AttackHistory.js   # Retrospective logs for security audits.
+│   ├── routes/
+│   │   ├── authRoutes.js      # SOC analyst authentication (accepts default credentials).
+│   │   ├── logRoutes.js       # Receives logs from portal and broadcasts via Socket.IO.
+│   │   ├── blockRoutes.js     # Manual override endpoints for IP bans.
+│   │   └── incidentRoutes.js  # Fetches incidents and manages account unlocking.
+│   ├── services/
+│   │   ├── ruleEngine.js      # Evaluates logs against signatures and flood rates.
+│   │   │                      # Includes synchronous in-memory alert locking.
+│   │   ├── incidentResponse.js# progressive quarantine (Block/Captcha), UFW SSH executions,
+│   │   │                      # and bidirectional unblock-to-incident resolution.
+│   │   └── systemMonitor.js   # Periodically collects CPU/RAM utilization telemetry.
+│   ├── reset_security.js      # Clean slate script to reset portal and monitor databases.
+│   └── server.js              # SIEM entry. Connects DB and binds Socket.IO listeners.
+│
+└── security-dashboard/        # Dark-mode cyberpunk SOC SIEM client.
+
+
+================================================================================
+3. SECURITY CONTROL FLOWS & ASCII FLOWCHARTS
+================================================================================
+
+--------------------------------------------------------------------------------
+A. INLINE WAF MIDDLEWARE BLOCKING FLOW (checkIpBlock.js)
+--------------------------------------------------------------------------------
+Every HTTP request hitting the Employee Portal is intercepted at the perimeter:
+
+[ Incoming HTTP Request ]
+          |
+          v
+[ checkIpBlock Middleware ]
+          |
+          +---> 1. Run local WAF regex checks (User-Agent, URL, payload)
+          |        |
+          |        +---> Match Found? (e.g. Nmap scanner, SQL Injection string)
+          |        |        |
+          |        |        v (YES)
+          |        |     [ Async Send Log to Monitor ] --> [ Return 403 Forbidden ]
+          |        |
+          |        +---> (NO)
+          |                 |
+          v                 v
+[ Fetch active blocks from port 5000 (/blocked-ips/check/:ip) ]
+          |
+          +---> Active Block Found in DB?
+                   |
+                   +---> Yes & policy is 'Block'? -----------> [ Return 403 Forbidden ]
+                   |
+                   +---> Yes & policy is 'Captcha' & post? -> [ Return 403 / Captcha Required ]
+                   |
+                   +---> No block active? -------------------> [ call next() - Pass to Logger ]
+
+
+--------------------------------------------------------------------------------
+B. RULE ENGINE ANALYSIS & ALERT GENERATION FLOW (ruleEngine.js)
+--------------------------------------------------------------------------------
+When the Monitoring Platform receives a request log:
+
+[ Incoming Log Payload ]
+          |
+          v
+[ analyzeLog(logData, io) ]
+          |
+          +---> 1. Check Brute Force (5 failures in 60s)
+          +---> 2. Check SQL Injection (WAF-level regex matching keywords & tautology)
+          +---> 3. Check XSS (checks script structures & event handlers)
+          +---> 4. Check Directory Traversal (dots & sensitive paths)
+          +---> 5. Check HTTP Flood (100 requests in 60s)
+          |
+          v
+    Signature Matched?
+          |
+          +---> Yes: [ createAlert(alertData, io) ]
+          |               |
+          |               v
+          |          [ Synchronous alertLocks Map Check ]
+          |               |
+          |               +---> Already logged in last 60s? ----> [ Return null ]
+          |               |
+          |               +---> First occurrence?
+          |                        |
+          |                        v
+          |                  [ Set alertLocks Map ]
+          |                  [ Save Alert Document to MongoDB ]
+          |                  [ Emit 'new-alert' via Socket.IO ]
+          |                  [ Call handleIncident (if Critical) ]
+          |
+          +---> No:  [ Return null ]
+
+
+--------------------------------------------------------------------------------
+C. PROGRESSIVE INCIDENT RESPONSE & LEASE TIMEOUT (incidentResponse.js)
+--------------------------------------------------------------------------------
+When a Critical Alert is escalated to the incident engine:
+
+[ handleIncident(alert, io) ]
+          |
+          v
+[ Check active incident for IP/type ]
+          |
+          +---> Found open incident? ----> [ Aggregate alert & timeline ] -> [ Exit ]
+          |
+          +---> No active incident?
+                   |
+                   v
+          [ Create Incident & Report ]
+          [ Apply progressive quarantine (Block / Captcha) ]
+          |
+          +---> If restriction is 'Block':
+          |          |
+          |          +---> Lock portal account associated with IP in DB
+          |          +---> Execute SSH command: `sudo ufw deny from [ip]`
+          |
+          v
+[ Create BlockedIp lease record in MongoDB ]
+[ Emit 'ip-blocked' via Socket.IO ]
+[ Schedule auto-unblock setTimeout for 15 minutes ]
+          |
+          | (15 minutes passes...)
+          v
+[ Timeout Fires ]
+          |
+          +---> Execute SSH command: `sudo ufw delete deny from [ip]`
+          +---> Set BlockedIp isActive = false
+          +---> Set Incident status = 'Resolved' in MongoDB
+          +---> Emit 'ip-unblocked' via Socket.IO
+
+
+================================================================================
+4. TECHNOLOGY DEEP DIVE (HOW THEY WORK UNDER THE HOOD)
+================================================================================
+
+- Express Middleware Pipeline:
+  Express uses a sequential callback pipeline. Express chain execution halts if a
+  middleware sends a response (e.g. `res.status(403).json()`) instead of calling
+  `next()`. In our architecture, the `checkIpBlock` middleware resides at the front
+  of the stack, acting as an inline firewall. If an attack signature matches, it
+  sends a `403` and terminates the connection, preventing the backend controller or
+  database query from executing.
+
+- Socket.IO Handshakes & Heartbeats:
+  Socket.IO uses WebSocket (RFC 6455) as its transport layer, falling back to HTTP
+  long-polling if websockets are blocked. On server startup, it binds to the HTTP server
+  and establishes connection handlers. The client establishes a handshake, opening a
+  persistent TCP socket connection. Heartbeat pings/pongs are exchanged periodically.
+  Our SIEM uses this connection to push alerts and CPU statistics to client browsers
+  in real-time without requiring the client to poll the backend.
+
+- MongoDB/Mongoose Connection Pooling & States:
+  Mongoose utilizes a connection pool (default max size of 10) to optimize database
+  throughput. In `incidentRoutes.js` and `incidentResponse.js`, the backend establishes
+  secondary connections to the Portal database using `mongoose.createConnection()`.
+  To prevent memory leaks and `OverwriteModelError` (which crashes Node when compiling a
+  schema name that has already been registered in the process thread), we use the Mongoose
+  model cache registry pattern: `conn.models.User || conn.model(...)`.
+
+- SSH2 Tunneling & UFW Firewall Execution:
+  The `ssh2` library opens a client-to-server secure channel over SSH (Port 22) using
+  a private key configuration. When UFW commands are executed, they run in a shell channel.
+  If the host is local (localhost/127.0.0.1) and SSH parameters are empty, the library
+  gracefully throws an exception which the backend catches, continuing database-level WAF
+  blocking without crashing the server process.
+
+
+================================================================================
+5. EXAMINER VIVA QUESTION & ANSWER BANK (30+ DETAILED Q&A)
+================================================================================
+
+Q1: What is the core goal of the CloudShield AI project?
+A: The goal is to build a dual-tiered application showing how a Web Application
+   Firewall (WAF) can perform inline signature blocking and communicate telemetry to a
+   Security Information and Event Management (SIEM) dashboard for automated incident
+   response, progressive quarantine, and real-time visualization.
+
+Q2: How does the system block attacks in real-time?
+A: The Employee Portal Backend utilizes the `checkIpBlock` WAF middleware. When a request
+   is received, the WAF runs regex signature checks. If a match occurs, it halts execution
+   immediately, logs the incident, and returns a `403 Access Denied` response before the app
+   executes any controller code.
+
+Q3: What happens if the IP is already blocked in the database?
+A: When a request bypasses WAF signature checks, the `checkIpBlock` middleware queries
+   the Monitoring Platform endpoint (`/blocked-ips/check/:ip`). If the database has an
+   active block lease, the middleware blocks the client request with a 403 Forbidden.
+
+Q4: What is progressive quarantine?
+A: When an attack is detected, the platform applies a restriction based on threat severity:
+   - High/Critical threat (SQLi, XSS, Path Traversal, DDoS) -> Hard Block (403 Access Denied)
+   - Medium threat (Brute Force, Enumeration) -> Captcha challenge (requires captcha solving)
+   - Low threat -> Allowed, but logged.
+
+Q5: Why did you remove the AI Detection tab and proxy routes?
+A: The AI detection module (which connected to a Python microservice on port 8000) was
+   decoupled and marked as "Future Scope/Improvement". Decoupling it simplifies local deployment
+   on examiner systems while keeping the core rule-based WAF signatures running.
+
+Q6: How does the SQL Injection regex work?
+A: The refined regex scans for actual database manipulation query structures like `UNION SELECT`,
+   logical tautologies (`OR 1=1` or `AND 1=1`), nested blocks (`/*` or `*/`), command stacking
+   separators, and database administration commands (`xp_cmdshell`, `sleep()`, `benchmark()`). It
+   excludes standalone keywords (like "select" or "or") to prevent false positives on common words.
+
+Q7: How does the XSS regex work?
+A: It checks request payloads for script tag patterns (`<script>`), javascript protocol links
+   (`javascript:`), inline HTML event handlers (`onerror=`, `onload=`, `onclick=`), and common
+   browser execute functions (`alert(`, `document.cookie`).
+
+Q8: How does the Directory Traversal regex work?
+A: It detects relative directory path changes (e.g. `../` and `..\`), URL-encoded variants
+   (`%2e%2e%2f`), and requests targeting sensitive files (such as `/etc/passwd`, `win.ini`,
+   `boot.ini`, `.env`, and `web.config`).
+
+Q9: What is the purpose of the in-memory `alertLocks` Map in the Rule Engine?
+A: Under concurrent flood testing (like `autocannon`), multiple requests hit Node concurrently.
+   Since database writes are asynchronous, checking the DB for duplicate alerts will fail because
+   in-flight alerts haven't been written to MongoDB yet. The synchronous in-memory Map acts as a
+   mutex lock, guaranteeing that only one alert is generated per 60-second window.
+
+Q10: What is the difference between an Alert and an Incident in your database?
+A: An **Alert** represents a single security signature violation (e.g. one SQLi payload).
+   An **Incident** is a higher-level workflow container (INC-XXXX) that aggregates multiple
+   related alerts from the same IP address/attack type over time and tracks the remediation actions
+   taken by the system.
+
+Q11: How does your system aggregate alerts into incidents?
+A: At the start of `handleIncident()`, the system queries MongoDB for any active (`Open` or
+   `Investigating`) incident matching the IP and attack type. If found, it appends the alert
+   reference and its details to the existing incident's timeline instead of creating a new incident.
+
+Q12: How does the bidirectional sync between IP blocks and Incidents work?
+A: - When an IP block expires or is manually unblocked, the backend automatically sets all
+     active incidents for that IP to `Resolved`.
+   - When an analyst manually resolves an incident in the dashboard, the backend automatically
+     deactivates any active IP blocks associated with that incident's source IP.
+
+Q13: What happens to active IP blocks if the server crashes or restarts?
+A: Standard timers (`setTimeout`) are cleared from Node's memory when the process stops. To prevent
+   expired blocks from getting stuck as active in MongoDB, we implemented a self-healing startup
+   hook in `server.js` that automatically deactivates all expired blocks in the DB on boot.
+
+Q14: What does the `reset_security.js` script do?
+A: It connects to both the Portal and Monitoring databases, clears all active IP blocks, resolves
+   all open incidents, deletes logs/alerts history, and unlocks all user accounts, restoring the
+   databases to a clean starting baseline.
+
+Q15: What databases are you using?
+A: MongoDB Atlas (M0 tier cloud clusters). We have two databases:
+   - `cloudshield_portal`: Stores employee profiles, HR logs, and user login credentials.
+   - `cloudshield_monitor`: Stores SIEM alert logs, incidents, and blocked IP records.
+
+Q16: How does the application prevent brute force attacks?
+A: If a user fails login 5 times within 60 seconds, the WAF restricts their IP to CAPTCHA. If they
+   fail another 2 login attempts without passing the captcha, the quarantine escalates to a hard IP
+   Block and sets `isLocked: true` on the target username in the database.
+
+Q17: How is the firewall block executed on a hosting server?
+A: The system uses the `ssh2` library to establish a secure SSH connection to the Linux hosting EC2
+   instance and executes system firewall commands (`sudo ufw deny from [ip]`) to drop incoming
+   traffic at the network perimeter.
+
+Q18: What is your frontend technology?
+A: React.js bundled via Vite, styled using CSS custom utilities and a Tailwind CSS v3 dark-theme
+   configuration for the SOC dashboard, and a corporate blue theme for the HR portal.
+
+Q19: How are real-time alerts broadcasted to the frontend?
+A: The monitoring server mounts a Socket.IO WebSocket listener. When an alert is created by the
+   rule engine, the backend calls `io.emit('new-alert', alert)`, broadcasting it to all active
+   dashboard clients instantly.
+
+Q20: Why do you monkey-patch `res.send` and `res.json`?
+A: We patch them in `requestLogger.js` to intercept responses after the controller executes. This
+   allows us to capture the final HTTP status code (e.g. `200` or `404`) and send traffic logs to
+   the SIEM asynchronously without slowing down request processing.
+
+Q21: How do you prevent log duplication in requestLogger.js?
+A: Since Express's `res.json()` internally calls `res.send()`, patching both would cause every
+   request to be logged twice. We set a custom flag `res._logged = true` on the first execution to
+   prevent the second method wrapper from firing.
+
+Q22: Why is the WAF middleware placed before the logger middleware in the Portal backend?
+A: If the logger ran first, blocked requests (403s) would still get logged and sent to the SIEM,
+   flooding the SIEM with traffic during a DDoS test. Running `checkIpBlock` first drops blocked
+   packets instantly, saving system resources.
+
+Q23: How do default logins work on the portal backend?
+A: If the user inputs `admin`/`admin` (portal) or `admin`/`admin` (SOC), a backend bypass accepts
+   them and generates a signed JSON Web Token (JWT) for robustness during exam presentations.
+
+Q24: What is JWT?
+A: JSON Web Token. It is an open standard (RFC 7519) that defines a compact, self-contained way
+   for securely transmitting information between parties as a JSON object, signed using a secret.
+
+Q25: How does your React frontend authorize API requests?
+A: It stores the JWT token in `localStorage`. An Axios request interceptor attaches the token as an
+   `Authorization: Bearer <token>` header on every outbound API call.
+
+Q26: What happens if the JWT token in localStorage is invalid or expired?
+A: An Axios response interceptor intercepts any `401 Unauthorized` responses from the backend,
+   clears the invalid token from `localStorage`, and redirects the user to the `/login` page.
+
+Q27: What is the purpose of the CountUp component on the dashboard?
+A: It is a custom React component that animates numerical values from zero to their final count
+   on mount, enhancing the visual presentation of dashboard statistics.
+
+Q28: How does the dashboard show the remaining duration of a blocked IP?
+A: The `Countdown` component uses a 1-second interval (`setInterval`) to calculate the difference
+   between the current time and the block's `unblockAt` lease time, formatting it as `MM:SS`.
+
+Q29: How did you implement CORS, and why is it permissive?
+A: We configure Express CORS middleware (`app.use(cors())`) to accept all origins. This is necessary
+   to allow communication between local development ports (`5173`, `3000`, `3001`, and `5000`).
+
+Q30: How does the system handle DDoS/HTTP Flood?
+A: The rule engine tracks request counts per IP in a rolling 60-second window. If an IP exceeds 100
+   requests, the system triggers a critical HTTP Flood alert, which immediately locks the IP out
+   (hard block 403) at the portal gateway.
+
+
+================================================================================
+6. STEP-BY-STEP LIVE DEMO PLAYBOOK FOR EXAM DAY
+================================================================================
+
+Ensure you run `node reset_security.js` in the `monitoring-platform` folder before starting.
+
+--------------------------------------------------------------------------------
+DEMO 1: SQL INJECTION (Inline Perimeter Blocking)
+--------------------------------------------------------------------------------
+1. Log in to the Employee Portal (`http://localhost:5173`) as `admin` / `admin`.
+2. Go to the "Leave Management" section.
+3. In the "Leave Reason" text box, input this SQL injection string:
+   ' OR 1=1 --
+4. Click "Apply for Leave".
+5. **Observation:** The page will instantly reload and display an **"Access Denied: Your IP
+   address has been blocked"** 403 error.
+6. Open the Security SOC Dashboard.
+7. **Observation:**
+   - Under **Alerts**, a Critical SQL Injection alert is displayed.
+   - Under **Blocked IPs**, the IP `127.0.0.1` is listed with a live ticking countdown.
+8. Go to the terminal of the `monitoring-platform` and run `node reset_security.js` to unblock yourself.
+
+--------------------------------------------------------------------------------
+DEMO 2: CROSS-SITE SCRIPTING (XSS Payload Filtering)
+--------------------------------------------------------------------------------
+1. Go back to the Employee Portal.
+2. In the "Leave Reason" box, input this XSS script payload:
+   <script>alert('XSS_Hacked')</script>
+3. Click "Apply".
+4. **Observation:** The request is instantly blocked with a `403` screen.
+5. In the Security SOC Dashboard:
+   - A Critical XSS alert is registered in the list.
+   - The IP `127.0.0.1` is added to the blocked list.
+6. Run `node reset_security.js` to clear the ban.
+
+--------------------------------------------------------------------------------
+DEMO 3: DIRECTORY TRAVERSAL (System Configurations Protection)
+--------------------------------------------------------------------------------
+1. Open PowerShell and run this command:
+   Invoke-WebRequest -Uri "http://localhost:3000/api/employees/search?search=/etc/passwd"
+2. **Observation:** The request returns a `403 Forbidden` error. No directory contents or employee
+   lists are returned.
+3. Check the SOC Dashboard:
+   - A Critical Directory Traversal alert is listed.
+   - The IP is blocked in the active bans table.
+4. Run `node reset_security.js` to clear the ban.
+
+--------------------------------------------------------------------------------
+DEMO 4: HTTP FLOOD (DDoS Real-time Block & Incident Aggregation)
+--------------------------------------------------------------------------------
+1. Open PowerShell and run this command (simulates a DDoS botnet request flood):
+   autocannon -c 2 -d 10 http://localhost:3000/api/employees/search?search=test
+2. **Observation during execution:**
+   - The first 100 requests return `200 OK`.
+   - On the 101st request, the WAF fires an alert and blocks the IP in real-time.
+   - The remaining requests return `403 Forbidden` or `429 Too Many Requests`.
+3. Open the Security SOC Dashboard:
+   - Exactly **one** HTTP Flood alert is generated (deduplicated).
+   - Exactly **one** Incident report is created.
+   - The IP `127.0.0.1` is added to the active bans list.
+4. Run `node reset_security.js` to clear the database.
+
+--------------------------------------------------------------------------------
+DEMO 5: BRUTE FORCE (CAPTCHA Progressive Lockout & Account Unlocking)
+--------------------------------------------------------------------------------
+1. Go to the Employee Portal login page.
+2. Try logging in with username `employee` and random incorrect passwords.
+3. **Observation:**
+   - After **5 failed attempts**, the screen displays a Slide CAPTCHA.
+4. Perform **2 more failed attempts** (without solving the CAPTCHA).
+5. **Observation:**
+   - The portal locks the account and blocks your IP.
+6. Open the Security SOC Dashboard:
+   - A Brute Force alert is displayed.
+   - Under **Blocked IPs**, click **"Unban + Unlock"** on the `127.0.0.1` row.
+   - **Observation:** The block is deleted and the associated account is unlocked.
+7. Go back to the portal and log in successfully with `employee` / `employee`.
+
+================================================================================
+                       CLOUDSHIELD AI — END OF REFERENCE GUIDE
+================================================================================
