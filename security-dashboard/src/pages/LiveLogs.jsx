@@ -67,8 +67,13 @@ const LiveLogs = () => {
     const loadLogs = async () => {
       try {
         const response = await api.get('/logs');
-        const raw = response.data?.logs || response.data;
-        if (raw && Array.isArray(raw) && raw.length > 0) {
+        const raw = Array.isArray(response.data?.logs)
+          ? response.data.logs
+          : Array.isArray(response.data)
+          ? response.data
+          : null;
+
+        if (raw !== null) {
           setLogs(raw.map(l => ({
             id: l._id || l.id,
             timestamp: new Date(l.timestamp),
@@ -95,9 +100,13 @@ const LiveLogs = () => {
 
     const handleNewLog = (log) => {
       const formattedLog = {
-        ...log,
-        id: log.id || String(Date.now() + Math.random()),
-        timestamp: log.timestamp ? new Date(log.timestamp) : new Date()
+        id:        log._id || log.id || String(Date.now() + Math.random()),
+        timestamp: new Date(log.timestamp || log.createdAt || Date.now()),
+        ip:        log.ip || 'unknown',
+        method:    log.method || 'GET',
+        endpoint:  log.endpoint || '/',
+        status:    log.status || 200,
+        eventType: log.eventType || 'Nominal'
       };
 
       if (isPaused) {

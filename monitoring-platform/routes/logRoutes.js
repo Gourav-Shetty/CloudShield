@@ -19,9 +19,13 @@ router.post('/', async (req, res) => {
 
     const log = await Log.create(logData);
 
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('new-log', log);
+    }
+
     // Run through the rule engine (non-blocking in terms of response,
     // but we await to capture any created alert for the response body).
-    const io = req.app.get('io');
     const alert = await analyzeLog(logData, io);
 
     return res.status(201).json({
