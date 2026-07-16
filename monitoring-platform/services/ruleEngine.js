@@ -54,7 +54,7 @@ const XSS_RE =
   /(<script\b[^>]*>|javascript:|onerror\s*=|onload\s*=|onclick\s*=|onmouseover\s*=|onfocus\s*=|onblur\s*=|onchange\s*=|onkeydown\s*=|onkeyup\s*=|onkeypress\s*=|alert\s*\(|prompt\s*\(|confirm\s*\(|eval\s*\(|document\.cookie|document\.write|<iframe|<object|<embed|<svg)/i;
 
 const DIR_TRAVERSAL_RE =
-  /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\\|\.\.%2f|\/etc\/passwd|win\.ini|boot\.ini)/i;
+  /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e%5c|%2e%2e\\|\.\.%2f|\.\.%5c|\/etc\/(passwd|shadow|hosts|group|issue)|\/proc\/self\/environ|win\.ini|boot\.ini|system\.ini|web\.config|wp-config\.php|\.env)/i;
 
 const PORT_SCAN_RE =
   /(nmap|nikto|sqlmap|dirbuster|gobuster|masscan|w3af|hydra|acunetix|nessus)/i;
