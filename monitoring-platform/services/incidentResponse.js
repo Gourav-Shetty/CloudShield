@@ -82,6 +82,35 @@ async function handleIncident(alertData, io, classification = null) {
   const ip = alertData.sourceIP;
   const now = new Date();
 
+  // Check if there is an active (Open/Investigating) incident for this IP and attackType
+  const existingIncident = await Incident.findOne({
+    sourceIP: ip,
+    attackType: alertData.attackType,
+    status: { $in: ['Open', 'Investigating'] }
+  });
+
+  if (existingIncident) {
+    console.log(`[IncidentResponse] Aggregating alert into existing Incident: ${existingIncident.incidentId}`);
+    
+    // Add the new alert reference to the existing incident
+    if (alertData._id && !existingIncident.relatedAlerts.includes(alertData._id)) {
+      existingIncident.relatedAlerts.push(alertData._id);
+    }
+    
+    existingIncident.actionsTaken.push({
+      action: 'Alert aggregated',
+      timestamp: now,
+      details: alertData.description || `Aggregated duplicate alert for ${alertData.attackType}`,
+    });
+    
+    await existingIncident.save();
+    
+    if (io) {
+      io.emit('incident-updated', existingIncident);
+    }
+    return existingIncident;
+  }
+
   /* --- Determine progressive restriction type --- */
   let restrictionType = 'Block';
   let rateLimitRps = 2;
@@ -91,8 +120,8 @@ async function handleIncident(alertData, io, classification = null) {
   if (predictedClass === 'SQLInjection' || predictedClass === 'XSS' || predictedClass === 'PortScan' || (alertData.description && alertData.description.includes('escalation'))) {
     restrictionType = 'Block';
   } else if (predictedClass === 'DDoS' || predictedClass === 'HTTPFlood') {
-    restrictionType = 'RateLimit';
-    rateLimitRps = 2; // Allow maximum 2 requests per second
+    // Escalate DDoS / HTTP Flood to hard Block for active demonstration effectiveness
+    restrictionType = 'Block';
   } else if (predictedClass === 'BruteForce' || predictedClass === 'Enumeration') {
     restrictionType = 'Captcha';
   }

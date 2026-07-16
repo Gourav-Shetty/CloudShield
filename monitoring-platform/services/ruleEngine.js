@@ -282,6 +282,17 @@ async function analyzeLog(logData, io) {
         );
       }
     } else if (recent.length > 5) {
+      // Prevent duplicate BruteForce alerts within the 60-second window
+      const cutoffDate = new Date(Date.now() - 60_000);
+      const existingAlert = await Alert.findOne({
+        sourceIP: ip,
+        attackType: 'BruteForce',
+        createdAt: { $gte: cutoffDate }
+      });
+      if (existingAlert) {
+        return null;
+      }
+
       return createAlert(
         {
           severity: 'Critical',
@@ -370,6 +381,18 @@ async function analyzeLog(logData, io) {
   requestCounts.set(ip, recentReqs);
 
   if (recentReqs.length > 100) {
+    // Prevent duplicate HTTPFlood alerts within the 60-second window
+    const cutoffDate = new Date(Date.now() - 60_000);
+    const existingAlert = await Alert.findOne({
+      sourceIP: ip,
+      attackType: 'HTTPFlood',
+      createdAt: { $gte: cutoffDate }
+    });
+
+    if (existingAlert) {
+      return null;
+    }
+
     return createAlert(
       {
         severity: 'Critical',
