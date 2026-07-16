@@ -43,12 +43,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Serve uploaded files statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Custom request logger — sends every request to the monitoring platform
-app.use(requestLogger);
-
 // Check if client IP is security-blocked
 const { checkIpBlock } = require('./middleware/checkIpBlock');
 app.use(checkIpBlock);
+
+// Custom request logger — sends every request to the monitoring platform
+app.use(requestLogger);
 
 // ---------------------------------------------------------------------------
 // Routes

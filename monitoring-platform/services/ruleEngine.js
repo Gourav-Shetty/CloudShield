@@ -70,11 +70,27 @@ function deepStringify(obj) {
   return Object.values(obj).map(deepStringify).join(' ');
 }
 
+// Keep track of alert generation timestamps to prevent concurrent race duplicates
+const alertLocks = new Map();
+
 /**
  * Persist an alert, broadcast it, and escalate to incidentResponse.
  */
 async function createAlert(alertData, io) {
   try {
+    const { sourceIP: ip, attackType } = alertData;
+    const lockKey = `${ip}_${attackType}`;
+    const now = Date.now();
+    const lastAlertTime = alertLocks.get(lockKey);
+
+    if (lastAlertTime && now - lastAlertTime < 60_000) {
+      console.log(`[RuleEngine] In-memory lock active for ${lockKey}. Skipping duplicate alert.`);
+      return null;
+    }
+
+    // Set lock synchronously
+    alertLocks.set(lockKey, now);
+
     const alert = await Alert.create(alertData);
 
     // Broadcast to all connected dashboard clients
