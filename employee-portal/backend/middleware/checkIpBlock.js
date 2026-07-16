@@ -6,6 +6,19 @@ const requestHistory = new Map();
 // In-memory store for resolved CAPTCHA verification tokens
 const resolvedCaptchaTokens = new Map();
 
+// WAF Signature Regexes
+const SQL_INJECTION_RE =
+  /(UNION\s+(ALL\s+)?SELECT|SELECT\s+.*FROM|INSERT\s+INTO|UPDATE\s+.*SET|DELETE\s+FROM|DROP\s+(TABLE|DATABASE)|OR\s+['"]?\d+['"]?\s*=\s*['"]?\d+|AND\s+['"]?\d+['"]?\s*=\s*['"]?\d+|--|#|\/\*|\*\/|xp_cmdshell|exec\s*\(|benchmark\s*\(|sleep\s*\()/i;
+
+const XSS_RE =
+  /(<script\b[^>]*>|javascript:|onerror\s*=|onload\s*=|onclick\s*=|onmouseover\s*=|onfocus\s*=|onblur\s*=|onchange\s*=|onkeydown\s*=|onkeyup\s*=|onkeypress\s*=|alert\s*\(|prompt\s*\(|confirm\s*\(|eval\s*\(|document\.cookie|document\.write|<iframe|<object|<embed|<svg)/i;
+
+const DIR_TRAVERSAL_RE =
+  /(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e%5c|%2e%2e\\|\.\.%2f|\.\.%5c|\/etc\/(passwd|shadow|hosts|group|issue)|\/proc\/self\/environ|win\.ini|boot\.ini|system\.ini|web\.config|wp-config\.php|\.env)/i;
+
+const PORT_SCAN_RE =
+  /(nmap|nikto|sqlmap|dirbuster|gobuster|masscan|w3af|hydra|acunetix|nessus)/i;
+
 // Periodically clean history store (every 2 minutes)
 setInterval(() => {
   const now = Date.now();
@@ -41,6 +54,61 @@ const checkIpBlock = async (req, res, next) => {
   try {
     const monitoringUrl = process.env.MONITORING_URL || 'http://localhost:5000';
     const ip = getClientIp(req);
+
+    // ── 0. INLINE WAF SIGNATURE CHECKS ──
+    const userAgent = req.headers['user-agent'] || '';
+    const endpoint = req.originalUrl || '';
+    const bodyStr = req.body ? JSON.stringify(req.body) : '';
+    const requestPayload = endpoint + bodyStr;
+
+    let matchedSignature = false;
+    let attackType = '';
+
+    if (PORT_SCAN_RE.test(userAgent)) {
+      matchedSignature = true;
+      attackType = 'PortScan';
+    } else if (DIR_TRAVERSAL_RE.test(endpoint)) {
+      matchedSignature = true;
+      attackType = 'DirectoryTraversal';
+    } else if (SQL_INJECTION_RE.test(requestPayload)) {
+      matchedSignature = true;
+      attackType = 'SQLInjection';
+    } else if (XSS_RE.test(bodyStr)) {
+      matchedSignature = true;
+      attackType = 'XSS';
+    }
+
+    if (matchedSignature) {
+      console.warn(`[WAF] Inline Blocked ${attackType} from ${ip} on ${endpoint}`);
+      
+      // Asynchronously log the attack to the monitoring platform
+      try {
+        const { sendLog } = require('../config/logClient');
+        const logPayload = req.body && Object.keys(req.body).length > 0 ? { ...req.body } : {};
+        if (req.user && req.user.username) {
+          logPayload.username = req.user.username;
+        }
+
+        sendLog({
+          ip,
+          method: req.method,
+          endpoint,
+          status: 403,
+          userAgent,
+          eventType: 'Request',
+          payload: Object.keys(logPayload).length > 0 ? logPayload : undefined,
+        });
+      } catch (logErr) {
+        console.error('[WAF] Failed to send inline log to monitoring platform:', logErr.message);
+      }
+
+      // Return 403 immediately! Do not proceed to next()
+      return res.status(403).json({
+        success: false,
+        message: 'Access Denied: Your IP address has been blocked due to a security violation.',
+        isIpBlocked: true
+      });
+    }
 
     // Call the check endpoint on the monitoring platform
     const resp = await axios.get(`${monitoringUrl}/blocked-ips/check/${encodeURIComponent(ip)}`, { timeout: 1000 });
