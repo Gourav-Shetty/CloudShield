@@ -73,8 +73,15 @@ const BlockedIPs = () => {
     const fetchBlockedIPs = async () => {
       try {
         const response = await api.get('/ip/blocks');
-        const raw = response.data?.blockedIps || response.data;
-        if (raw && Array.isArray(raw)) {
+        // Explicitly check for the blockedIps property — don't use || since [] is falsy
+        const raw = Array.isArray(response.data?.blockedIps)
+          ? response.data.blockedIps
+          : Array.isArray(response.data)
+          ? response.data
+          : null;
+
+        if (raw !== null) {
+          // API responded — use real data (even if the list is empty)
           setBlockedList(raw.map(b => ({
             ...b,
             id: b._id || b.id,
@@ -84,10 +91,12 @@ const BlockedIPs = () => {
             status: b.isActive ? 'active' : 'expired'
           })));
         } else {
+          // Unexpected response shape — fall back to mock
           setBlockedList(generateMockBlocks());
         }
       } catch (err) {
-        console.warn('API blocked-list endpoints inaccessible. Starting with default simulated bans.');
+        // Network / auth error — fall back to mock so the UI isn't blank
+        console.warn('API blocked-list endpoint inaccessible. Showing demo data.');
         setBlockedList(generateMockBlocks());
       }
     };
@@ -174,29 +183,62 @@ const BlockedIPs = () => {
     }
   };
 
-  // Handle manual unblocking trigger
-  const handleUnblock = async (ip) => {
-    try {
-      await api.post('/ip/unblock', { ip });
-      setBlockedList(prev => prev.filter(item => item.ip !== ip));
-    } catch (err) {
-      console.warn(`Unblock API call failed for ${ip}. Performing local removal.`);
-      setBlockedList(prev => prev.filter(item => item.ip !== ip));
-    }
+  // Per-row loading state for unban
+  const [unbanning, setUnbanning] = useState({});
+
+  // Toast message state
+  const [unlockMessage, setUnlockMessage] = useState('');
+  const [toastError, setToastError] = useState(false);
+
+  const showToast = (msg, isError = false) => {
+    setUnlockMessage(msg);
+    setToastError(isError);
+    setTimeout(() => setUnlockMessage(''), 5000);
   };
 
-  // Handle unlocking user accounts associated with an IP
-  const [unlockMessage, setUnlockMessage] = useState('');
+  // Handle Unban: removes IP block AND unlocks associated account in one action
+  const handleUnblock = async (ip) => {
+    setUnbanning(prev => ({ ...prev, [ip]: true }));
+    const results = [];
+    let hasError = false;
+
+    // Step 1: Remove IP block
+    try {
+      await api.post('/ip/unblock', { ip });
+      results.push('IP unblocked');
+      setBlockedList(prev => prev.filter(item => item.ip !== ip));
+    } catch (err) {
+      // Still remove from UI — the block may have already expired
+      setBlockedList(prev => prev.filter(item => item.ip !== ip));
+      results.push('IP block removed (local)');
+    }
+
+    // Step 2: Unlock associated account (always attempt this for Block-type restrictions)
+    try {
+      const res = await api.post('/incidents/unlock-account', { ip });
+      const count = res.data?.modifiedCount ?? res.data?.count ?? 0;
+      if (count > 0) {
+        results.push(`${count} account(s) unlocked`);
+      } else {
+        results.push('No locked accounts found for this IP');
+      }
+    } catch (err) {
+      results.push('Account unlock failed — check server logs');
+      hasError = true;
+    }
+
+    setUnbanning(prev => ({ ...prev, [ip]: false }));
+    showToast('✓ ' + results.join(' · '), hasError);
+  };
+
+  // Standalone account unlock (still available if needed separately)
   const handleUnlockAccount = async (ip) => {
     try {
       const res = await api.post('/incidents/unlock-account', { ip });
       const msg = res.data?.message || 'Account unlocked';
-      setUnlockMessage(msg);
-      setTimeout(() => setUnlockMessage(''), 4000);
+      showToast('✓ ' + msg);
     } catch (err) {
-      console.warn(`Unlock account failed for ${ip}.`);
-      setUnlockMessage('Failed to unlock — check server logs.');
-      setTimeout(() => setUnlockMessage(''), 4000);
+      showToast('Failed to unlock account — check server logs.', true);
     }
   };
 
@@ -214,11 +256,15 @@ const BlockedIPs = () => {
 
   return (
     <div className="space-y-6">
-      {/* Unlock Account Toast */}
+      {/* Action Toast */}
       {unlockMessage && (
-        <div className="fixed top-6 right-6 z-50 px-5 py-3 rounded-lg border bg-dark-800/95 border-cyber-blue/40 text-cyber-blue text-xs font-mono shadow-lg shadow-cyber-blue/10 animate-fade-in flex items-center gap-2">
-          <FiUserCheck className="w-4 h-4" />
-          {unlockMessage}
+        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-lg border bg-dark-800/95 text-xs font-mono shadow-lg animate-fade-in flex items-center gap-2 ${
+          toastError
+            ? 'border-cyber-red/40 text-cyber-red shadow-cyber-red/10'
+            : 'border-cyber-green/40 text-cyber-green shadow-cyber-green/10'
+        }`}>
+          <FiUserCheck className="w-4 h-4 shrink-0" />
+          <span>{unlockMessage}</span>
         </div>
       )}
       {/* Header */}
@@ -393,22 +439,18 @@ const BlockedIPs = () => {
                         </span>
                       </td>
                       <td className="py-4 px-6 text-center">
-                        <div className="flex items-center gap-2 justify-center">
-                          <button
-                            onClick={() => handleUnblock(ban.ip)}
-                            className="flex items-center gap-1.5 px-3 py-1 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
-                          >
+                        <button
+                          onClick={() => handleUnblock(ban.ip)}
+                          disabled={unbanning[ban.ip]}
+                          className="flex items-center gap-1.5 px-3 py-1.5 mx-auto bg-cyber-green/10 border border-cyber-green/30 text-cyber-green hover:bg-cyber-green/20 disabled:opacity-50 disabled:pointer-events-none rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
+                        >
+                          {unbanning[ban.ip] ? (
+                            <div className="w-3 h-3 border border-cyber-green border-t-transparent rounded-full animate-spin" />
+                          ) : (
                             <FiUnlock className="w-3.5 h-3.5" />
-                            <span>Unban</span>
-                          </button>
-                          <button
-                            onClick={() => handleUnlockAccount(ban.ip)}
-                            className="flex items-center gap-1.5 px-3 py-1 bg-cyber-blue/10 border border-cyber-blue/30 text-cyber-blue hover:bg-cyber-blue/20 rounded-md font-semibold text-[10px] tracking-wider uppercase transition-all"
-                          >
-                            <FiUserCheck className="w-3.5 h-3.5" />
-                            <span>Unlock Account</span>
-                          </button>
-                        </div>
+                          )}
+                          <span>{unbanning[ban.ip] ? 'Unbanning...' : 'Unban + Unlock'}</span>
+                        </button>
                       </td>
                     </tr>
                   );

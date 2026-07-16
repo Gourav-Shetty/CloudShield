@@ -147,14 +147,26 @@ router.post('/unlock-account', auth, async (req, res) => {
       return res.status(400).json({ error: 'IP address is required' });
     }
 
-    const result = await lockUserAccount(ip);
-
-    // Note: lockUserAccount sets isLocked = true. For an "unlock" endpoint
-    // we need the inverse. Re-connect and set isLocked = false.
     const mongoose = require('mongoose');
     const portalUri = process.env.PORTAL_DB_URI;
     if (!portalUri) {
       return res.status(500).json({ error: 'PORTAL_DB_URI not configured' });
+    }
+
+    // Look up recent failed login logs to find targeted usernames
+    // Use a 30-minute window (wider than the lock's 5-min window) to catch stale attacks
+    let usernames = [];
+    try {
+      const Log = require('../models/Log');
+      const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+      const recentLogs = await Log.find({
+        ip,
+        eventType: { $in: ['Login', 'LoginFailure', 'LoginLocked'] },
+        timestamp: { $gte: cutoff },
+      }).lean();
+      usernames = [...new Set(recentLogs.map(l => l.payload?.username).filter(Boolean))];
+    } catch (logErr) {
+      console.warn('[Incidents] Unlock: failed to query logs for usernames:', logErr.message);
     }
 
     let portalConn;
@@ -166,19 +178,27 @@ router.post('/unlock-account', auth, async (req, res) => {
 
       const UserModel = portalConn.model(
         'UserUnlock',
-        new mongoose.Schema({ isLocked: Boolean, lastLoginIP: String }),
+        new mongoose.Schema({ isLocked: Boolean, lastLoginIP: String, username: String }),
         'users',
       );
 
+      // Build the same broad query that lockUserAccount used
+      const query = { $or: [{ lastLoginIP: ip }] };
+      if (usernames.length > 0) {
+        query.$or.push({ username: { $in: usernames } });
+      }
+
       const unlockResult = await UserModel.updateMany(
-        { lastLoginIP: ip },
+        query,
         { $set: { isLocked: false } },
       );
 
-      return res.json({
-        message: `Unlocked ${unlockResult.modifiedCount} account(s) for IP ${ip}`,
-        modifiedCount: unlockResult.modifiedCount,
-      });
+      const msg = unlockResult.modifiedCount > 0
+        ? `Unlocked ${unlockResult.modifiedCount} account(s) for IP ${ip}${usernames.length ? ' (targeted: ' + usernames.join(', ') + ')' : ''}`
+        : `No locked accounts found for IP ${ip}`;
+
+      console.log(`[Incidents] ${msg}`);
+      return res.json({ message: msg, modifiedCount: unlockResult.modifiedCount });
     } finally {
       if (portalConn) await portalConn.close();
     }
