@@ -283,13 +283,15 @@ async function handleIncident(alertData, io, classification = null) {
         io.emit('ip-unblocked', { ip, unblockedAt: new Date() });
       }
 
-      // Update incident
+      // Update incident to Resolved on quarantine expiration
       await Incident.findByIdAndUpdate(incident._id, {
+        status: 'Resolved',
+        resolvedAt: new Date(),
         $push: {
           actionsTaken: {
             action: 'IP restriction expired',
             timestamp: new Date(),
-            details: `Quarantine expired for ${ip} after 15-minute cooldown`,
+            details: `Quarantine expired for ${ip} after 15-minute cooldown. Incident Resolved.`,
           },
         },
       });
@@ -379,6 +381,17 @@ async function manualUnblock(ip, io) {
   block.isActive = false;
   block.unblockedAt = new Date();
   await block.save();
+
+  // Resolve all active incidents for this IP address
+  try {
+    const Incident = require('../models/Incident');
+    await Incident.updateMany(
+      { sourceIP: ip, status: { $in: ['Open', 'Investigating'] } },
+      { $set: { status: 'Resolved', resolvedAt: new Date() } }
+    );
+  } catch (err) {
+    console.error(`[IncidentResponse] Failed to resolve incidents on manual unblock:`, err.message);
+  }
 
   if (io) {
     io.emit('ip-unblocked', { ip, unblockedAt: new Date() });

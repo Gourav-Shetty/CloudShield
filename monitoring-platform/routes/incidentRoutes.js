@@ -113,6 +113,25 @@ router.put('/:id/status', auth, async (req, res) => {
 
     if (capitalizedStatus === 'Resolved') {
       incident.resolvedAt = new Date();
+
+      // Automatically deactivate any active IP blocks for this source IP
+      try {
+        const BlockedIp = require('../models/BlockedIp');
+        const activeBlock = await BlockedIp.findOne({ ip: incident.sourceIP, isActive: true });
+        if (activeBlock) {
+          activeBlock.isActive = false;
+          activeBlock.unblockedAt = new Date();
+          await activeBlock.save();
+          
+          // Emit unblock event
+          const io = req.app.get('io');
+          if (io) {
+            io.emit('ip-unblocked', { ip: incident.sourceIP, unblockedAt: new Date() });
+          }
+        }
+      } catch (blockErr) {
+        console.error('[Incidents] Failed to release block on status resolution:', blockErr.message);
+      }
     }
 
     incident.actionsTaken.push({
