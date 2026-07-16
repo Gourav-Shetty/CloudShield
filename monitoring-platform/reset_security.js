@@ -10,7 +10,7 @@ async function reset() {
     // 1. Connect to Monitor DB and clear all blocked IPs
     console.log('Connecting to Monitoring DB...');
     const monitorConn = await mongoose.createConnection(monitorUri).asPromise();
-    const BlockedIp = monitorConn.model('BlockedIp', new mongoose.Schema({ isActive: Boolean }), 'blockedips');
+    const BlockedIp = monitorConn.model('BlockedIp', new mongoose.Schema({ isActive: Boolean }), 'blocked_ips');
     const Alert = monitorConn.model('Alert', new mongoose.Schema({}), 'alerts');
     const Incident = monitorConn.model('Incident', new mongoose.Schema({}), 'incidents');
     const Anomaly = monitorConn.model('Anomaly', new mongoose.Schema({}), 'anomalies');

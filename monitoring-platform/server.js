@@ -34,10 +34,24 @@ const io = socketIo(server, {
 app.set('io', io);
 
 // Connect to Database
-connectDB().then(() => {
+connectDB().then(async () => {
   // Seed default admin user if none exists
   if (authRoutes.seedDefaultAdmin) {
     authRoutes.seedDefaultAdmin();
+  }
+
+  // Self-healing startup hook: deactivate any expired IP bans left active from previous runs
+  try {
+    const BlockedIp = require('./models/BlockedIp');
+    const result = await BlockedIp.updateMany(
+      { isActive: true, unblockAt: { $lt: new Date() } },
+      { $set: { isActive: false, unblockedAt: new Date() } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[Startup] Deactivated ${result.modifiedCount} expired IP ban(s) left active from previous server runs.`);
+    }
+  } catch (err) {
+    console.error('[Startup] Failed to clear expired IP bans:', err.message);
   }
 });
 
