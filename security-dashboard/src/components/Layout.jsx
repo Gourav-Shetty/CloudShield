@@ -34,12 +34,6 @@ const navGroups = [
       { name: 'Incidents',   path: '/incidents',   icon: FiAlertTriangle },
     ],
   },
-  {
-    label: 'INTELLIGENCE',
-    items: [
-      { name: 'Reports',      path: '/reports',      icon: FiFileText },
-    ],
-  },
 ];
 
 const Layout = () => {

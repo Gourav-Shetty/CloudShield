@@ -10,7 +10,6 @@ import LiveLogs from './pages/LiveLogs';
 import Alerts from './pages/Alerts';
 import Incidents from './pages/Incidents';
 import BlockedIPs from './pages/BlockedIPs';
-import Reports from './pages/Reports';
 
 // Auth Guard component
 const ProtectedRoute = ({ children }) => {
@@ -60,7 +59,6 @@ function App() {
             <Route path="alerts" element={<Alerts />} />
             <Route path="incidents" element={<Incidents />} />
             <Route path="blocked-ips" element={<BlockedIPs />} />
-            <Route path="reports" element={<Reports />} />
           </Route>
 
           {/* Catch-all redirect to index */}
