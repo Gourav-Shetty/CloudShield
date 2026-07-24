@@ -115,10 +115,10 @@ const BlockedIPs = () => {
         status: 'active'
       };
       
-      // Prevent duplicates
+      // Update existing IP entry or prepend new entry
       setBlockedList(prev => {
-        if (prev.some(item => item.ip === formattedBan.ip)) return prev;
-        return [formattedBan, ...prev];
+        const filtered = prev.filter(item => item.ip !== formattedBan.ip);
+        return [formattedBan, ...filtered];
       });
     };
 
@@ -167,15 +167,15 @@ const BlockedIPs = () => {
       await api.post('/ip/block', blockData);
       // Backend should emit ip-blocked, but update local state just in case
       setBlockedList(prev => {
-        if (prev.some(item => item.ip === blockData.ip)) return prev;
-        return [{ ...blockData, blockedAt, unblockAt }, ...prev];
+        const filtered = prev.filter(item => item.ip !== blockData.ip);
+        return [{ ...blockData, blockedAt, unblockAt }, ...filtered];
       });
       setIpInput('');
     } catch (err) {
       console.warn('Block IP API submission failed. Performing local state dispatch.');
       setBlockedList(prev => {
-        if (prev.some(item => item.ip === blockData.ip)) return prev;
-        return [{ ...blockData, blockedAt, unblockAt }, ...prev];
+        const filtered = prev.filter(item => item.ip !== blockData.ip);
+        return [{ ...blockData, blockedAt, unblockAt }, ...filtered];
       });
       setIpInput('');
     } finally {
